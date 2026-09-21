@@ -7,6 +7,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -105,6 +106,18 @@ fun getConsoleTheme(id: String): ConsoleTheme {
 
 @Composable
 fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String, String, String) -> Unit) {
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // Intercept hardware back button to navigate WebView history instead of closing app
+    BackHandler {
+        val wv = webViewRef
+        if (wv != null && wv.canGoBack()) {
+            wv.goBack()
+        } else {
+            onClose()
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().background(Color(0xFF0D121D)).padding(horizontal = 14.dp, vertical = 10.dp),
@@ -114,7 +127,7 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
             Box(
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF1E293B)).border(1.dp, Color(0xFF334155), RoundedCornerShape(10.dp)).clickable { onClose() }.padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Text("Back to Hub", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text("← Back to Hub", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF10B981)))
@@ -131,6 +144,7 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                     settings.setSupportMultipleWindows(false)
                     settings.javaScriptCanOpenWindowsAutomatically = false
                     val ua = settings.userAgentString
+
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                             val req = request?.url?.toString()?.lowercase() ?: return null
@@ -142,15 +156,30 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                             val req = request?.url?.toString() ?: return false
                             val l = req.lowercase()
-                            if (l.endsWith(".zip") || l.endsWith(".7z") || l.endsWith(".rar") || l.endsWith(".nsp") || l.endsWith(".xci") || l.endsWith(".nds") || l.endsWith(".gba") || l.endsWith(".iso") || l.endsWith(".exe")) {
+                            
+                            // Block popup ad domains
+                            if (AD_BLOCK_DOMAINS.any { l.contains(it) }) return true
+
+                            // Catch direct ROM downloads and prevent browser redirect trap
+                            if (l.endsWith(".zip") || l.endsWith(".7z") || l.endsWith(".rar") || 
+                                l.endsWith(".nsp") || l.endsWith(".xci") || l.endsWith(".nds") || 
+                                l.endsWith(".gba") || l.endsWith(".iso") || l.endsWith(".exe") ||
+                                l.contains("download") || l.contains("rom") || l.contains("file")
+                            ) {
                                 onDownload(req, ua, "", "")
                                 return true
                             }
-                            return AD_BLOCK_DOMAINS.any { l.contains(it) }
+                            return false
                         }
                     }
-                    setDownloadListener { dl, u, cd, m, _ -> onDownload(dl ?: "", u ?: ua, cd ?: "", m ?: "") }
+
+                    setDownloadListener { dl, u, cd, m, _ -> 
+                        if (!dl.isNullOrEmpty() && !dl.contains("html")) {
+                            onDownload(dl, u ?: ua, cd ?: "", m ?: "") 
+                        }
+                    }
                     loadUrl(url)
+                    webViewRef = this
                 }
             }
         )
@@ -250,4 +279,3 @@ fun DownloadCard(task: DownloadTask) {
         }
     }
 }
-
