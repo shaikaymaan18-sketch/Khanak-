@@ -65,7 +65,12 @@ data class DownloadTask(
     val totalBytes: Long
 )
 
-data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+data class ConsoleCardStyle(
+    val brush: Brush,
+    val accentColor: Color,
+    val formatChips: List<String>,
+    val badgeText: String
+)
 
 val AD_BLOCK_DOMAINS = setOf(
     "doubleclick.net", "googleads", "adservice.google", "popads.net",
@@ -131,6 +136,11 @@ class MainActivity : ComponentActivity() {
                                 onOpenDownloads = { currentScreen = ScreenState.DOWNLOADS }
                             )
                         }
+                        ScreenState.DOWNLOADS -> {
+                            DownloadsScreen(
+                                onClose = { currentScreen = ScreenState.HUB }
+                            )
+                        }
                         ScreenState.BROWSER -> {
                             BrowserScreen(
                                 url = activeBrowserUrl,
@@ -138,11 +148,6 @@ class MainActivity : ComponentActivity() {
                                 onDownload = { url: String, userAgent: String, contentDisposition: String, mimetype: String ->
                                     downloadFile(url, userAgent, contentDisposition, mimetype)
                                 }
-                            )
-                        }
-                        ScreenState.DOWNLOADS -> {
-                            DownloadsScreen(
-                                onClose = { currentScreen = ScreenState.HUB }
                             )
                         }
                     }
@@ -179,6 +184,54 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// -------------------------------------------------------------
+// STANDALONE AD & REDIRECT SHIELD
+// -------------------------------------------------------------
+class AdShieldClient(
+    private val onDownload: (String, String, String, String) -> Unit,
+    private val defaultUserAgent: String
+) : WebViewClient() {
+
+    override fun shouldInterceptRequest(
+        view: WebView?,
+        request: WebResourceRequest?
+    ): WebResourceResponse? {
+        val reqUrl = request?.url?.toString()?.lowercase() ?: return null
+        for (adDomain in AD_BLOCK_DOMAINS) {
+            if (reqUrl.contains(adDomain)) {
+                return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+            }
+        }
+        return super.shouldInterceptRequest(view, request)
+    }
+
+    override fun shouldOverrideUrlLoading(
+        view: WebView?,
+        request: WebResourceRequest?
+    ): Boolean {
+        val reqUrl = request?.url?.toString() ?: return false
+        val lower = reqUrl.lowercase()
+
+        if (lower.endsWith(".zip") || lower.endsWith(".7z") || lower.endsWith(".rar") ||
+            lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
+            lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
+        ) {
+            onDownload(reqUrl, defaultUserAgent, "", "")
+            return true
+        }
+
+        for (adDomain in AD_BLOCK_DOMAINS) {
+            if (lower.contains(adDomain)) {
+                return true
+            }
+        }
+        return false
+    }
+}
+
+// -------------------------------------------------------------
+// DASHBOARD SCREEN
+// -------------------------------------------------------------
 @Composable
 fun DashboardScreen(
     platforms: List<ConsoleSource>,
@@ -347,156 +400,60 @@ fun DashboardScreen(
     }
 }
 
+// -------------------------------------------------------------
+// DOWNLOADS MANAGEMENT SCREEN
+// -------------------------------------------------------------
 @Composable
-fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
-    val (cardBrush, accentColor, formatChips, badgeText) = when (console.id.lowercase()) {
-        "switch" -> Quadruple(
-            Brush.horizontalGradient(listOf(Color(0xFF28111A), Color(0xFF140F18))),
-            Color(0xFFFF3366),
-            listOf("NSP", "XCI", "UPDATES"),
-            "HYBRID"
-        )
-        "pc" -> Quadruple(
-            Brush.horizontalGradient(listOf(Color(0xFF0D2534), Color(0xFF0E1622))),
-            Color(0xFF00E5FF),
-            listOf("EXE", "DIRECT-PLAY", "7Z"),
-            "X86 CORE"
-        )
-        "nds" -> Quadruple(
-            Brush.horizontalGradient(listOf(Color(0xFF221138), Color(0xFF120E22))),
-            Color(0xFFBD00FF),
-            listOf("NDS", "ZIP", "SAV"),
-            "DUAL SCREEN"
-        )
-        "gba" -> Quadruple(
-            Brush.horizontalGradient(listOf(Color(0xFF2A1C0B), Color(0xFF14130E))),
-            Color(0xFFFFB300),
-            listOf("GBA", "BIN", "SAV"),
-            "CLASSIC"
-        )
-        else -> Quadruple(
-            Brush.horizontalGradient(listOf(Color(0xFF161E2E), Color(0xFF0E131F))),
-            Color(0xFF38BDF8),
-            listOf("ARCHIVE", "ROM"),
-            "CONSOLE"
-        )
+fun DownloadsScreen(onClose: () -> Unit) {
+    val context = LocalContext.current
+    var downloadList by remember { mutableStateOf<List<DownloadTask>>(emptyList()) }
+    var selectedFilter by remember { mutableStateOf("ALL") }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            downloadList = fetchDownloads(context)
+            delay(1500)
+        }
     }
 
-    Box(
+    val filteredList = remember(downloadList, selectedFilter) {
+        when (selectedFilter) {
+            "DOWNLOADING" -> downloadList.filter { it.status == DownloadManager.STATUS_RUNNING }
+            "PENDING" -> downloadList.filter {
+                it.status == DownloadManager.STATUS_PENDING || it.status == DownloadManager.STATUS_PAUSED
+            }
+            "COMPLETED" -> downloadList.filter { it.status == DownloadManager.STATUS_SUCCESSFUL }
+            else -> downloadList
+        }
+    }
+
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(cardBrush)
-            .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
-            .clickable { onClick() }
-            .padding(16.dp)
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(58.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(accentColor)
-            )
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = console.name,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFFF8FAFC)
-                    )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(accentColor.copy(alpha = 0.15f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = badgeText,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Black,
-                            color = accentColor,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "TARGET: ${console.subtitle}",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF94A3B8)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    formatChips.forEach { chip ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF090D14))
-                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 7.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = chip,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF64748B)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF0F141F))
-                    .border(1.dp, accentColor.copy(alpha = 0.35f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "→",
-                    color = accentColor,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun BrowserScreen(
-    url: String,
-    onClose: () -> Unit,
-    onDownload: (String, String, String, String) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF0D121D))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Column {
+                Text(
+                    text = "DOWNLOADS",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                    color = Color(0xFFF1F5F9)
+                )
+                Text(
+                    text = "LOCAL TRANSFERS & ARCHIVES",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp,
+                    color = Color(0xFF64748B)
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
@@ -506,19 +463,66 @@ fun BrowserScreen(
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = "← Back to Hub",
+                    text = "Back to Hub",
                     color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
+        }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("ALL", "DOWNLOADING", "PENDING", "COMPLETED").forEach { tag ->
+                val isSelected = selectedFilter == tag
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF10B981))
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF131823))
+                        .border(
+                            1.dp,
+                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { selectedFilter = tag }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = tag,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3B8)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        if (filteredList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No files found in this category.",
+                    color = Color(0xFF475569),
+                    fontSize = 14.sp
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-   
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(filteredList) { item ->
+                    DownloadCard(task = item)
+                }
+            }
+      
