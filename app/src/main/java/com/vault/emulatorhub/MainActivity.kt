@@ -179,9 +179,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// -------------------------------------------------------------
-// DASHBOARD SCREEN
-// -------------------------------------------------------------
 @Composable
 fun DashboardScreen(
     platforms: List<ConsoleSource>,
@@ -350,9 +347,6 @@ fun DashboardScreen(
     }
 }
 
-// -------------------------------------------------------------
-// CONSOLE BANNER CARD
-// -------------------------------------------------------------
 @Composable
 fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
     val (cardBrush, accentColor, formatChips, badgeText) = when (console.id.lowercase()) {
@@ -488,9 +482,6 @@ fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
     }
 }
 
-// -------------------------------------------------------------
-// BROWSER SCREEN (Clean Box Back Button + Ad-Shield)
-// -------------------------------------------------------------
 @Composable
 fun BrowserScreen(
     url: String,
@@ -516,4 +507,18 @@ fun BrowserScreen(
             ) {
                 Text(
                     text = "← Back to Hub",
-                
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF10B981))
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+   
