@@ -67,7 +67,6 @@ data class DownloadTask(
 
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-// Ad networks, popunders, and redirection domains blocked at network level
 val AD_BLOCK_DOMAINS = setOf(
     "doubleclick.net", "googleads", "adservice.google", "popads.net",
     "propellerads.com", "exoclick.com", "adsterra.com", "monetag.com",
@@ -87,7 +86,6 @@ class MainActivity : ComponentActivity() {
             var currentScreen by remember { mutableStateOf(ScreenState.HUB) }
             var activeBrowserUrl by remember { mutableStateOf("") }
 
-            // Automatic Permissions (Notifications on Android 13+, Storage on Android 9 and older)
             val permissionsToRequest = remember {
                 val list = mutableListOf<String>()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -182,7 +180,7 @@ class MainActivity : ComponentActivity() {
 }
 
 // -------------------------------------------------------------
-// DASHBOARD SCREEN (Banner Card Layout & Telemetry)
+// DASHBOARD SCREEN
 // -------------------------------------------------------------
 @Composable
 fun DashboardScreen(
@@ -196,7 +194,6 @@ fun DashboardScreen(
             .padding(horizontal = 18.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Header
         item {
             Row(
                 modifier = Modifier
@@ -251,7 +248,6 @@ fun DashboardScreen(
             }
         }
 
-        // Telemetry Shield Banner
         item {
             Box(
                 modifier = Modifier
@@ -315,12 +311,10 @@ fun DashboardScreen(
             )
         }
 
-        // Full-Width Hero Cards
         items(platforms) { console ->
             ConsoleCard(console = console, onClick = { onSelectPlatform(console.url) })
         }
 
-        // Bottom status footer
         item {
             Spacer(modifier = Modifier.height(4.dp))
             Box(
@@ -495,7 +489,7 @@ fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
 }
 
 // -------------------------------------------------------------
-// BROWSER SCREEN (Ad-Shield & Redirect Sniffer)
+// BROWSER SCREEN (Clean Box Back Button + Ad-Shield)
 // -------------------------------------------------------------
 @Composable
 fun BrowserScreen(
@@ -512,6 +506,14 @@ fun BrowserScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = onClose,
-                colors = ButtonDefaults.buttonColors(containerColor =
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF1E293B))
+                    .border(1.dp, Color(0xFF334155), RoundedCornerShape(10.dp))
+                    .clickable { onClose() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "← Back to Hub",
+                
