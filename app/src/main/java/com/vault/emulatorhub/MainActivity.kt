@@ -27,6 +27,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.google.gson.Gson
+import java.io.InputStreamReader
+
+data class PlatformConfig(val platforms: List<ConsoleSource>)
 
 data class ConsoleSource(
     val id: String,
@@ -37,15 +41,11 @@ data class ConsoleSource(
 
 class MainActivity : ComponentActivity() {
 
-    private val platforms = listOf(
-        ConsoleSource("switch", "Nintendo Switch", "Eden / Yuzu", "https://google.com"),
-        ConsoleSource("pc", "PC Games", "Winlator / Box64", "https://google.com"),
-        ConsoleSource("nds", "Nintendo DS", "MelonDS", "https://google.com"),
-        ConsoleSource("gba", "Game Boy Advance", "RetroArch", "https://google.com")
-    )
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        val platforms = loadPlatformsFromAssets()
+
         setContent {
             var selectedUrl by remember { mutableStateOf<String?>(null) }
 
@@ -67,6 +67,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun loadPlatformsFromAssets(): List<ConsoleSource> {
+        return try {
+            assets.open("sources.json").use { stream ->
+                val reader = InputStreamReader(stream)
+                val config = Gson().fromJson(reader, PlatformConfig::class.java)
+                config.platforms
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
@@ -168,4 +180,3 @@ fun BrowserScreen(
         )
     }
 }
-
