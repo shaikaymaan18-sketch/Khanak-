@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.webkit.DownloadListener
 import android.webkit.URLUtil
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -65,14 +66,7 @@ data class DownloadTask(
     val totalBytes: Long
 )
 
-data class ConsoleCardStyle(
-    val brush: Brush,
-    val accentColor: Color,
-    val formatChips: List<String>,
-    val badgeText: String
-)
-
-val AD_BLOCK_DOMAINS = setOf(
+val AD_BLOCK_DOMAINS = listOf(
     "doubleclick.net", "googleads", "adservice.google", "popads.net",
     "propellerads.com", "exoclick.com", "adsterra.com", "monetag.com",
     "adnxs.com", "syndication.exoclick.com", "trafficjunky", "onclickmega.com",
@@ -80,8 +74,76 @@ val AD_BLOCK_DOMAINS = setOf(
     "revenuehits", "infolinks", "onclickalgo", "yadro.ru", "deloton.com"
 )
 
-class MainActivity : ComponentActivity() {
+fun formatSize(bytes: Long): String {
+    if (bytes <= 0L) return "--"
+    val kb = bytes.toDouble() / 1024.0
+    val mb = kb / 1024.0
+    val gb = mb / 1024.0
+    if (gb >= 1.0) return String.format("%.2f GB", gb)
+    if (mb >= 1.0) return String.format("%.1f MB", mb)
+    return String.format("%.0f KB", kb)
+}
 
+fun fetchDownloads(context: Context): List<DownloadTask> {
+    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    val cursor = dm.query(DownloadManager.Query()) ?: return emptyList()
+    val tasks = mutableListOf<DownloadTask>()
+    cursor.use { c ->
+        val idCol = c.getColumnIndex(DownloadManager.COLUMN_ID)
+        val titleCol = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
+        val statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
+        val downCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+        val totalCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+        while (c.moveToNext()) {
+            val id = if (idCol >= 0) c.getLong(idCol) else 0L
+            val title = if (titleCol >= 0) c.getString(titleCol) ?: "Archive" else "Archive"
+            val status = if (statusCol >= 0) c.getInt(statusCol) else 0
+            val down = if (downCol >= 0) c.getLong(downCol) else 0L
+            val total = if (totalCol >= 0) c.getLong(totalCol) else 0L
+            tasks.add(DownloadTask(id, title, status, down, total))
+        }
+    }
+    return tasks.reversed()
+}
+
+class AdShieldClient(
+    private val onDownload: (String, String, String, String) -> Unit,
+    private val defaultUserAgent: String
+) : WebViewClient() {
+    override fun shouldInterceptRequest(
+        view: WebView?,
+        request: WebResourceRequest?
+    ): WebResourceResponse? {
+        val reqUrl = request?.url?.toString()?.lowercase() ?: return null
+        for (adDomain in AD_BLOCK_DOMAINS) {
+            if (reqUrl.contains(adDomain)) {
+                return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+            }
+        }
+        return super.shouldInterceptRequest(view, request)
+    }
+
+    override fun shouldOverrideUrlLoading(
+        view: WebView?,
+        request: WebResourceRequest?
+    ): Boolean {
+        val reqUrl = request?.url?.toString() ?: return false
+        val lower = reqUrl.lowercase()
+        if (lower.endsWith(".zip") || lower.endsWith(".7z") || lower.endsWith(".rar") ||
+            lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
+            lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
+        ) {
+            onDownload(reqUrl, defaultUserAgent, "", "")
+            return true
+        }
+        for (adDomain in AD_BLOCK_DOMAINS) {
+            if (lower.contains(adDomain)) return true
+        }
+        return false
+    }
+}
+
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val platforms = loadPlatformsFromAssets()
@@ -112,11 +174,11 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(Unit) {
-                val pendingPermissions = permissionsToRequest.filter { perm ->
+                val pending = permissionsToRequest.filter { perm ->
                     ContextCompat.checkSelfPermission(context, perm) != PackageManager.PERMISSION_GRANTED
                 }
-                if (pendingPermissions.isNotEmpty()) {
-                    permissionLauncher.launch(pendingPermissions.toTypedArray())
+                if (pending.isNotEmpty()) {
+                    permissionLauncher.launch(pending.toTypedArray())
                 }
             }
 
@@ -137,15 +199,13 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         ScreenState.DOWNLOADS -> {
-                            DownloadsScreen(
-                                onClose = { currentScreen = ScreenState.HUB }
-                            )
+                            DownloadsScreen(onClose = { currentScreen = ScreenState.HUB })
                         }
                         ScreenState.BROWSER -> {
                             BrowserScreen(
                                 url = activeBrowserUrl,
                                 onClose = { currentScreen = ScreenState.HUB },
-                                onDownload = { url: String, userAgent: String, contentDisposition: String, mimetype: String ->
+                                onDownload = { url, userAgent, contentDisposition, mimetype ->
                                     downloadFile(url, userAgent, contentDisposition, mimetype)
                                 }
                             )
@@ -173,7 +233,7 @@ class MainActivity : ComponentActivity() {
         val request = DownloadManager.Request(Uri.parse(url)).apply {
             setMimeType(mimetype)
             addRequestHeader("User-Agent", userAgent)
-            setDescription("Vault Hub active download...")
+            setDescription("Vault Hub active transfer...")
             setTitle(filename)
             setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
@@ -184,54 +244,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// -------------------------------------------------------------
-// STANDALONE AD & REDIRECT SHIELD
-// -------------------------------------------------------------
-class AdShieldClient(
-    private val onDownload: (String, String, String, String) -> Unit,
-    private val defaultUserAgent: String
-) : WebViewClient() {
-
-    override fun shouldInterceptRequest(
-        view: WebView?,
-        request: WebResourceRequest?
-    ): WebResourceResponse? {
-        val reqUrl = request?.url?.toString()?.lowercase() ?: return null
-        for (adDomain in AD_BLOCK_DOMAINS) {
-            if (reqUrl.contains(adDomain)) {
-                return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
-            }
-        }
-        return super.shouldInterceptRequest(view, request)
-    }
-
-    override fun shouldOverrideUrlLoading(
-        view: WebView?,
-        request: WebResourceRequest?
-    ): Boolean {
-        val reqUrl = request?.url?.toString() ?: return false
-        val lower = reqUrl.lowercase()
-
-        if (lower.endsWith(".zip") || lower.endsWith(".7z") || lower.endsWith(".rar") ||
-            lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
-            lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
-        ) {
-            onDownload(reqUrl, defaultUserAgent, "", "")
-            return true
-        }
-
-        for (adDomain in AD_BLOCK_DOMAINS) {
-            if (lower.contains(adDomain)) {
-                return true
-            }
-        }
-        return false
-    }
-}
-
-// -------------------------------------------------------------
-// DASHBOARD SCREEN
-// -------------------------------------------------------------
 @Composable
 fun DashboardScreen(
     platforms: List<ConsoleSource>,
@@ -400,129 +412,95 @@ fun DashboardScreen(
     }
 }
 
-// -------------------------------------------------------------
-// DOWNLOADS MANAGEMENT SCREEN
-// -------------------------------------------------------------
 @Composable
-fun DownloadsScreen(onClose: () -> Unit) {
-    val context = LocalContext.current
-    var downloadList by remember { mutableStateOf<List<DownloadTask>>(emptyList()) }
-    var selectedFilter by remember { mutableStateOf("ALL") }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            downloadList = fetchDownloads(context)
-            delay(1500)
-        }
+fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
+    val id = console.id.lowercase()
+    val brush = when (id) {
+        "switch" -> Brush.horizontalGradient(listOf(Color(0xFF28111A), Color(0xFF140F18)))
+        "pc" -> Brush.horizontalGradient(listOf(Color(0xFF0D2534), Color(0xFF0E1622)))
+        "nds" -> Brush.horizontalGradient(listOf(Color(0xFF221138), Color(0xFF120E22)))
+        "gba" -> Brush.horizontalGradient(listOf(Color(0xFF2A1C0B), Color(0xFF14130E)))
+        else -> Brush.horizontalGradient(listOf(Color(0xFF161E2E), Color(0xFF0E131F)))
+    }
+    val accentColor = when (id) {
+        "switch" -> Color(0xFFFF3366)
+        "pc" -> Color(0xFF00E5FF)
+        "nds" -> Color(0xFFBD00FF)
+        "gba" -> Color(0xFFFFB300)
+        else -> Color(0xFF38BDF8)
+    }
+    val badgeText = when (id) {
+        "switch" -> "HYBRID"
+        "pc" -> "X86 CORE"
+        "nds" -> "DUAL SCREEN"
+        "gba" -> "CLASSIC"
+        else -> "CONSOLE"
+    }
+    val chips = when (id) {
+        "switch" -> listOf("NSP", "XCI", "UPDATES")
+        "pc" -> listOf("EXE", "DIRECT-PLAY", "7Z")
+        "nds" -> listOf("NDS", "ZIP", "SAV")
+        "gba" -> listOf("GBA", "BIN", "SAV")
+        else -> listOf("ARCHIVE", "ROM")
     }
 
-    val filteredList = remember(downloadList, selectedFilter) {
-        when (selectedFilter) {
-            "DOWNLOADING" -> downloadList.filter { it.status == DownloadManager.STATUS_RUNNING }
-            "PENDING" -> downloadList.filter {
-                it.status == DownloadManager.STATUS_PENDING || it.status == DownloadManager.STATUS_PAUSED
-            }
-            "COMPLETED" -> downloadList.filter { it.status == DownloadManager.STATUS_SUCCESSFUL }
-            else -> downloadList
-        }
-    }
-
-    Column(
+    Box(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 24.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(brush)
+            .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .clickable { onClick() }
+            .padding(16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "DOWNLOADS",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.sp,
-                    color = Color(0xFFF1F5F9)
-                )
-                Text(
-                    text = "LOCAL TRANSFERS & ARCHIVES",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp,
-                    color = Color(0xFF64748B)
-                )
-            }
-
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF1E293B))
-                    .border(1.dp, Color(0xFF334155), RoundedCornerShape(10.dp))
-                    .clickable { onClose() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = "Back to Hub",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf("ALL", "DOWNLOADING", "PENDING", "COMPLETED").forEach { tag ->
-                val isSelected = selectedFilter == tag
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF131823))
-                        .border(
-                            1.dp,
-                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B),
-                            RoundedCornerShape(10.dp)
-                        )
-                        .clickable { selectedFilter = tag }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .width(4.dp)
+                    .height(58.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(accentColor)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = tag,
-                        fontSize = 10.sp,
+                        text = console.name,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3B8)
+                        color = Color(0xFFF8FAFC)
                     )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(accentColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            color = accentColor,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
                 }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        if (filteredList.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "No files found in this category.",
-                    color = Color(0xFF475569),
-                    fontSize = 14.sp
+                    text = "TARGET: ${console.subtitle}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF94A3B8)
                 )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(filteredList) { item ->
-                    DownloadCard(task = item)
-                }
-            }
-      
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    chips.forEach { chip ->
+                        Box(
+                            modifier = Modifier
+                                
