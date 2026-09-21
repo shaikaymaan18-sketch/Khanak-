@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.webkit.URLUtil
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -21,9 +23,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +43,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import kotlinx.coroutines.delay
+import java.io.ByteArrayInputStream
 import java.io.InputStreamReader
 
 enum class ScreenState { HUB, BROWSER, DOWNLOADS }
@@ -65,6 +65,17 @@ data class DownloadTask(
     val totalBytes: Long
 )
 
+data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+// Ad networks, popunders, and redirection domains blocked at network level
+val AD_BLOCK_DOMAINS = setOf(
+    "doubleclick.net", "googleads", "adservice.google", "popads.net",
+    "propellerads.com", "exoclick.com", "adsterra.com", "monetag.com",
+    "adnxs.com", "syndication.exoclick.com", "trafficjunky", "onclickmega.com",
+    "ad-delivery", "advertising", "clksite.com", "zeroredirect", "popunder",
+    "revenuehits", "infolinks", "onclickalgo", "yadro.ru", "deloton.com"
+)
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,9 +87,7 @@ class MainActivity : ComponentActivity() {
             var currentScreen by remember { mutableStateOf(ScreenState.HUB) }
             var activeBrowserUrl by remember { mutableStateOf("") }
 
-            // ---------------------------------------------------------
-            // RUNTIME PERMISSION LAUNCHER (Storage & Notifications)
-            // ---------------------------------------------------------
+            // Automatic Permissions (Notifications on Android 13+, Storage on Android 9 and older)
             val permissionsToRequest = remember {
                 val list = mutableListOf<String>()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -95,7 +104,7 @@ class MainActivity : ComponentActivity() {
             ) { result ->
                 val allGranted = result.values.all { it }
                 if (allGranted && result.isNotEmpty()) {
-                    Toast.makeText(context, "Permissions active", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Permissions enabled", Toast.LENGTH_SHORT).show()
                 }
             }
 
@@ -108,9 +117,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // ---------------------------------------------------------
-            // APP SCREEN ROUTING
-            // ---------------------------------------------------------
             MaterialTheme(colorScheme = darkColorScheme(background = Color(0xFF07090E))) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -131,7 +137,7 @@ class MainActivity : ComponentActivity() {
                             BrowserScreen(
                                 url = activeBrowserUrl,
                                 onClose = { currentScreen = ScreenState.HUB },
-                                onDownload = { url, userAgent, contentDisposition, mimetype ->
+                                onDownload = { url: String, userAgent: String, contentDisposition: String, mimetype: String ->
                                     downloadFile(url, userAgent, contentDisposition, mimetype)
                                 }
                             )
@@ -176,7 +182,7 @@ class MainActivity : ComponentActivity() {
 }
 
 // -------------------------------------------------------------
-// DASHBOARD
+// DASHBOARD SCREEN (Banner Card Layout & Telemetry)
 // -------------------------------------------------------------
 @Composable
 fun DashboardScreen(
@@ -184,342 +190,328 @@ fun DashboardScreen(
     onSelectPlatform: (String) -> Unit,
     onOpenDownloads: () -> Unit
 ) {
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 24.dp)
+            .padding(horizontal = 18.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "VAULT HUB",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.SansSerif,
-                    letterSpacing = 1.5.sp,
-                    color = Color(0xFFF1F5F9)
-                )
-                Text(
-                    text = "ROM & ARCHIVE LAUNCHER",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
-                    color = Color(0xFF64748B)
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF131823))
-                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
-                    .clickable { onOpenDownloads() }
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF38BDF8))
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "DOWNLOADS",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFF38BDF8),
-                        letterSpacing = 1.sp
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            items(platforms) { console ->
-                ConsoleCard(console = console, onClick = { onSelectPlatform(console.url) })
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF0F141F))
-                .border(1.dp, Color(0xFF1B2333), RoundedCornerShape(16.dp))
-                .clickable { onOpenDownloads() }
-                .padding(14.dp)
-        ) {
+        // Header
+        item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "ENGINE: AUTO-SNIFFER",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF94A3B8),
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = "VIEW QUEUE →",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF38BDF8)
-                )
-            }
-        }
-    }
-}
+                Column {
+                    Text(
+                        text = "VAULT HUB",
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.SansSerif,
+                        letterSpacing = 1.5.sp,
+                        color = Color(0xFFF1F5F9)
+                    )
+                    Text(
+                        text = "EMULATOR REPOSITORIES",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp,
+                        color = Color(0xFF64748B)
+                    )
+                }
 
-// -------------------------------------------------------------
-// DOWNLOAD MANAGER VIEW (Categories: All / Downloading / Pending / Completed)
-// -------------------------------------------------------------
-@Composable
-fun DownloadsScreen(onClose: () -> Unit) {
-    val context = LocalContext.current
-    var downloadList by remember { mutableStateOf<List<DownloadTask>>(emptyList()) }
-    var selectedFilter by remember { mutableStateOf("ALL") }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            downloadList = fetchDownloads(context)
-            delay(1500)
-        }
-    }
-
-    val filteredList = remember(downloadList, selectedFilter) {
-        when (selectedFilter) {
-            "DOWNLOADING" -> downloadList.filter { it.status == DownloadManager.STATUS_RUNNING }
-            "PENDING" -> downloadList.filter {
-                it.status == DownloadManager.STATUS_PENDING || it.status == DownloadManager.STATUS_PAUSED
-            }
-            "COMPLETED" -> downloadList.filter { it.status == DownloadManager.STATUS_SUCCESSFUL }
-            else -> downloadList
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 24.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "DOWNLOADS",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.sp,
-                    color = Color(0xFFF1F5F9)
-                )
-                Text(
-                    text = "LOCAL TRANSFERS & ARCHIVES",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp,
-                    color = Color(0xFF64748B)
-                )
-            }
-
-            Button(
-                onClick = onClose,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Text("Back to Hub", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf("ALL", "DOWNLOADING", "PENDING", "COMPLETED").forEach { tag ->
-                val isSelected = selectedFilter == tag
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF131823))
-                        .border(
-                            1.dp,
-                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B),
-                            RoundedCornerShape(10.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF131823))
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
+                        .clickable { onOpenDownloads() }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF38BDF8))
                         )
-                        .clickable { selectedFilter = tag }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "DOWNLOADS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF38BDF8),
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Telemetry Shield Banner
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF131A29), Color(0xFF0E131F))
+                        )
+                    )
+                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(18.dp))
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "CORE STATUS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF64748B),
+                            letterSpacing = 1.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${platforms.size} Repositories Connected",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF10B981).copy(alpha = 0.15f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "AD-SHIELD ON",
+                            color = Color(0xFF10B981),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                text = "AVAILABLE PLATFORMS",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.5.sp,
+                color = Color(0xFF475569),
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+            )
+        }
+
+        // Full-Width Hero Cards
+        items(platforms) { console ->
+            ConsoleCard(console = console, onClick = { onSelectPlatform(console.url) })
+        }
+
+        // Bottom status footer
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF0F141F))
+                    .border(1.dp, Color(0xFF1B2333), RoundedCornerShape(16.dp))
+                    .clickable { onOpenDownloads() }
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = tag,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3B8)
+                        text = "ENGINE: AD-BLOCK + AUTO-SNIFFER",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF94A3B8),
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "VIEW QUEUE →",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF38BDF8)
                     )
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        if (filteredList.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No files found in this category.",
-                    color = Color(0xFF475569),
-                    fontSize = 14.sp
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(filteredList) { item ->
-                    DownloadCard(task = item)
-                }
-            }
-        }
     }
 }
 
+// -------------------------------------------------------------
+// CONSOLE BANNER CARD
+// -------------------------------------------------------------
 @Composable
-fun DownloadCard(task: DownloadTask) {
-    val (statusLabel, statusColor) = when (task.status) {
-        DownloadManager.STATUS_RUNNING -> "DOWNLOADING" to Color(0xFF00E5FF)
-        DownloadManager.STATUS_PENDING -> "QUEUED / PENDING" to Color(0xFFFFB300)
-        DownloadManager.STATUS_PAUSED -> "PAUSED" to Color(0xFFFFB300)
-        DownloadManager.STATUS_SUCCESSFUL -> "COMPLETED" to Color(0xFF10B981)
-        DownloadManager.STATUS_FAILED -> "FAILED" to Color(0xFFFF3366)
-        else -> "UNKNOWN" to Color(0xFF94A3B8)
+fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
+    val (cardBrush, accentColor, formatChips, badgeText) = when (console.id.lowercase()) {
+        "switch" -> Quadruple(
+            Brush.horizontalGradient(listOf(Color(0xFF28111A), Color(0xFF140F18))),
+            Color(0xFFFF3366),
+            listOf("NSP", "XCI", "UPDATES"),
+            "HYBRID"
+        )
+        "pc" -> Quadruple(
+            Brush.horizontalGradient(listOf(Color(0xFF0D2534), Color(0xFF0E1622))),
+            Color(0xFF00E5FF),
+            listOf("EXE", "DIRECT-PLAY", "7Z"),
+            "X86 CORE"
+        )
+        "nds" -> Quadruple(
+            Brush.horizontalGradient(listOf(Color(0xFF221138), Color(0xFF120E22))),
+            Color(0xFFBD00FF),
+            listOf("NDS", "ZIP", "SAV"),
+            "DUAL SCREEN"
+        )
+        "gba" -> Quadruple(
+            Brush.horizontalGradient(listOf(Color(0xFF2A1C0B), Color(0xFF14130E))),
+            Color(0xFFFFB300),
+            listOf("GBA", "BIN", "SAV"),
+            "CLASSIC"
+        )
+        else -> Quadruple(
+            Brush.horizontalGradient(listOf(Color(0xFF161E2E), Color(0xFF0E131F))),
+            Color(0xFF38BDF8),
+            listOf("ARCHIVE", "ROM"),
+            "CONSOLE"
+        )
     }
-
-    val progress = if (task.totalBytes > 0) {
-        (task.bytesDownloaded.toFloat() / task.totalBytes.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-
-    val percentText = if (task.totalBytes > 0) "${(progress * 100).toInt()}%" else "--"
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF0E131E))
-            .border(1.dp, Color(0xFF1A2234), RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(cardBrush)
+            .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .clickable { onClick() }
+            .padding(16.dp)
     ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = task.title,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(statusColor.copy(alpha = 0.15f))
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(58.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(accentColor)
+            )
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = statusLabel,
-                        color = statusColor,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        text = console.name,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFFF8FAFC)
                     )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(accentColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            color = accentColor,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = "TARGET: ${console.subtitle}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF94A3B8)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    formatChips.forEach { chip ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF090D14))
+                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = chip,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            LinearProgressIndicator(
-                progress = progress,
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = statusColor,
-                trackColor = Color(0xFF1E293B)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF0F141F))
+                    .border(1.dp, accentColor.copy(alpha = 0.35f), CircleShape),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}",
-                    fontSize = 11.sp,
-                    color = Color(0xFF64748B)
-                )
-                Text(
-                    text = percentText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = statusColor
+                    text = "→",
+                    color = accentColor,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
     }
 }
 
-fun fetchDownloads(context: Context): List<DownloadTask> {
-    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-    val cursor = dm.query(DownloadManager.Query()) ?: return emptyList()
-    val tasks = mutableListOf<DownloadTask>()
-
-    cursor.use { c ->
-        val idCol = c.getColumnIndex(DownloadManager.COLUMN_ID)
-        val titleCol = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
-        val statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
-        val downCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-        val totalCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-
-        while (c.moveToNext()) {
-            val id = if (idCol >= 0) c.getLong(idCol) else 0L
-            val title = if (titleCol >= 0) c.getString(titleCol) ?: "Archive File" else "Archive File"
-            val status = if (statusCol >= 0) c.getInt(statusCol) else 0
-            val downloaded = if (downCol >= 0) c.getLong(downCol) else 0L
-            val total = if (totalCol >= 0) c.getLong(totalCol) else 0L
-
-            tasks.add(DownloadTask(id, title, status, downloaded, total))
-        }
-    }
-    return tasks.reversed()
-}
-
-fun formatSize(bytes: Long): String {
-    if (bytes <= 
+// -------------------------------------------------------------
+// BROWSER SCREEN (Ad-Shield & Redirect Sniffer)
+// -------------------------------------------------------------
+@Composable
+fun BrowserScreen(
+    url: String,
+    onClose: () -> Unit,
+    onDownload: (String, String, String, String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0D121D))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = onClose,
+                colors = ButtonDefaults.buttonColors(containerColor =
