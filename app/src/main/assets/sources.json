@@ -5,29 +5,28 @@
       "name": "Nintendo Switch",
       "subtitle": "Eden / Yuzu",
       "icon": "switch",
-      "url": "https://example-switch-roms.com"
+      "url": "https://romslab.com/category/switch-games-1/"
     },
     {
       "id": "pc",
       "name": "PC Games",
       "subtitle": "Winlator / Box64",
       "icon": "pc",
-      "url": "https://example-pc-games.com"
+      "url": "https://steamrip.com/top-games/"
     },
     {
       "id": "nds",
       "name": "Nintendo DS",
       "subtitle": "MelonDS",
       "icon": "nds",
-      "url": "https://example-nds-roms.com"
+      "url": "https://www.romsgames.net/roms/nintendo-ds/"
     },
     {
       "id": "gba",
       "name": "Game Boy Advance",
       "subtitle": "RetroArch / mGBA",
       "icon": "gba",
-      "url": "https://example-gba-roms.com"
+      "url": "https://www.romsgames.net/roms/gameboy-advance/"
     }
   ]
 }
-
