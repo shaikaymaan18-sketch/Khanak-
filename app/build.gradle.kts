@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId = "com.vault.emulatorhub"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 33 // <-- THIS IS THE FIX
         versionCode = 1
         versionName = "1.0"
 
