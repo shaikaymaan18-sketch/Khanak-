@@ -69,6 +69,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.google.code.gson:gson:2.10.1")
     
-    // Multi-Threaded Engine (Fetch2)
-    implementation("androidx.tonyodev.fetch2:xfetch2:3.1.6")
+    // Multi-Threaded Engine (Fetch2 via JitPack)
+    implementation("com.github.tonyofrancis.Fetch:xfetch2:3.1.6")
 }
