@@ -1,10 +1,13 @@
 package com.vault.emulatorhub
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.Settings
 import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.widget.Toast
@@ -40,10 +43,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.google.gson.Gson
+import com.tonyodev.fetch2.EnqueueAction
 import com.tonyodev.fetch2.Fetch
-import com.tonyodev.fetch2.FetchConfiguration
 import com.tonyodev.fetch2.NetworkType
+import com.tonyodev.fetch2.Priority
 import com.tonyodev.fetch2.Request
+import java.io.File
 import java.io.InputStreamReader
 
 class MainActivity : ComponentActivity() {
@@ -51,37 +56,46 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val platforms = loadPlatformsFromAssets()
 
-        // Initialize High-Speed Fetch Engine
-        val fetchConfiguration = FetchConfiguration.Builder(this)
-            .setDownloadConcurrentLimit(4) // Strict Queue: Only 4 files download at once, the rest wait.
-            .build()
-        Fetch.Impl.setDefaultInstanceConfiguration(fetchConfiguration)
-
         setContent {
             val context = LocalContext.current
             var currentScreen by remember { mutableStateOf(ScreenState.HUB) }
             var activeBrowserUrl by remember { mutableStateOf("") }
 
-            val permissionsToRequest = remember {
-                val list = mutableListOf<String>()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    list.add(Manifest.permission.POST_NOTIFICATIONS)
-                }
-                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                    list.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-                list
-            }
-
-            val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-                if (result.values.all { it } && result.isNotEmpty()) {
-                    Toast.makeText(context, "Storage Bound", Toast.LENGTH_SHORT).show()
+            val permissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestMultiplePermissions()
+            ) { result ->
+                if (result.values.any { it }) {
+                    Toast.makeText(context, "Permissions updated", Toast.LENGTH_SHORT).show()
                 }
             }
 
             LaunchedEffect(Unit) {
-                val pending = permissionsToRequest.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-                if (pending.isNotEmpty()) permissionLauncher.launch(pending.toTypedArray())
+                val perms = mutableListOf<String>()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                    perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+                val pending = perms.filter {
+                    ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+                }
+                if (pending.isNotEmpty()) {
+                    permissionLauncher.launch(pending.toTypedArray())
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        context.startActivity(intent)
+                    }
+                }
             }
 
             MaterialTheme(colorScheme = darkColorScheme(background = Color(0xFF07090E))) {
@@ -89,15 +103,23 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = currentScreen,
                         transitionSpec = {
-                            slideInHorizontally(initialOffsetX = { w -> if (targetState == ScreenState.HUB) -w else w }, animationSpec = tween(400)) togetherWith 
-                            slideOutHorizontally(targetOffsetX = { w -> if (targetState == ScreenState.HUB) w else -w }, animationSpec = tween(400))
+                            slideInHorizontally(
+                                initialOffsetX = { w -> if (targetState == ScreenState.HUB) -w else w },
+                                animationSpec = tween(400)
+                            ) togetherWith slideOutHorizontally(
+                                targetOffsetX = { w -> if (targetState == ScreenState.HUB) w else -w },
+                                animationSpec = tween(400)
+                            )
                         },
                         label = "screen_transition"
                     ) { screen ->
                         when (screen) {
                             ScreenState.HUB -> DashboardScreen(
                                 platforms = platforms,
-                                onSelectPlatform = { url -> activeBrowserUrl = url; currentScreen = ScreenState.BROWSER },
+                                onSelectPlatform = { url ->
+                                    activeBrowserUrl = url
+                                    currentScreen = ScreenState.BROWSER
+                                },
                                 onOpenDownloads = { currentScreen = ScreenState.DOWNLOADS }
                             )
                             ScreenState.DOWNLOADS -> DownloadsScreen(onClose = { currentScreen = ScreenState.HUB })
@@ -115,27 +137,40 @@ class MainActivity : ComponentActivity() {
 
     private fun loadPlatformsFromAssets(): List<ConsoleSource> {
         return try {
-            assets.open("sources.json").use { stream -> Gson().fromJson(InputStreamReader(stream), PlatformConfig::class.java).platforms }
-        } catch (e: Exception) { emptyList() }
+            assets.open("sources.json").use { stream ->
+                Gson().fromJson(InputStreamReader(stream), PlatformConfig::class.java).platforms
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private fun downloadFile(url: String, userAgent: String, contentDisposition: String, mimetype: String, referer: String) {
         val filename = URLUtil.guessFileName(url, contentDisposition, mimetype)
-        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath
-        val filePath = "$dir/$filename"
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!dir.exists()) dir.mkdirs()
 
-        val request = Request(url, filePath).apply {
+        val targetFile = File(dir, filename)
+        val request = Request(url, targetFile.absolutePath).apply {
+            priority = Priority.HIGH
+            networkType = NetworkType.ALL
+            enqueueAction = EnqueueAction.REPLACE_EXISTING
             addHeader("User-Agent", userAgent)
             addHeader("Referer", referer)
+            addHeader("Accept-Encoding", "identity")
             val cookies = CookieManager.getInstance().getCookie(url)
             if (cookies != null) addHeader("Cookie", cookies)
-            networkType = NetworkType.ALL
         }
 
-        Fetch.getDefaultInstance().enqueue(request, 
-            { Toast.makeText(this, "Multi-Thread Queued: $filename", Toast.LENGTH_SHORT).show() },
-            { Toast.makeText(this, "Download Engine Blocked Request", Toast.LENGTH_SHORT).show() }
-        )
+        try {
+            Fetch.Impl.getDefaultInstance().enqueue(
+                request,
+                { Toast.makeText(this, "Queued: $filename", Toast.LENGTH_SHORT).show() },
+                { Toast.makeText(this, "Host rejected connection stream", Toast.LENGTH_SHORT).show() }
+            )
+        } catch (e: Exception) {
+            Toast.makeText(this, "Storage service initialization pending", Toast.LENGTH_SHORT).show()
+        }
     }
 }
 
