@@ -45,6 +45,7 @@ import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.tonyodev.fetch2.EnqueueAction
 import com.tonyodev.fetch2.Fetch
+import com.tonyodev.fetch2.FetchConfiguration
 import com.tonyodev.fetch2.NetworkType
 import com.tonyodev.fetch2.Priority
 import com.tonyodev.fetch2.Request
@@ -163,13 +164,20 @@ class MainActivity : ComponentActivity() {
         }
 
         try {
-            Fetch.Impl.getDefaultInstance().enqueue(
+            var fetch = runCatching { Fetch.Impl.getDefaultInstance() }.getOrNull()
+            if (fetch == null) {
+                val config = FetchConfiguration.Builder(this).setDownloadConcurrentLimit(3).build()
+                Fetch.Impl.setDefaultInstanceConfiguration(config)
+                fetch = Fetch.Impl.getDefaultInstance()
+            }
+
+            fetch.enqueue(
                 request,
                 { Toast.makeText(this, "Queued: $filename", Toast.LENGTH_SHORT).show() },
-                { Toast.makeText(this, "Host rejected connection stream", Toast.LENGTH_SHORT).show() }
+                { Toast.makeText(this, "Host rejected connection", Toast.LENGTH_SHORT).show() }
             )
         } catch (e: Exception) {
-            Toast.makeText(this, "Storage service initialization pending", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Crash Reason: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
