@@ -10,9 +10,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        jcenter()
+        maven { url = uri("https://jitpack.io") }
     }
 }
-
-rootProject.name = "EmulatorHub"
+rootProject.name = "VaultHub"
 include(":app")
 
