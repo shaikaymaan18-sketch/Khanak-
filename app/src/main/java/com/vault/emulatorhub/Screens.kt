@@ -104,7 +104,7 @@ fun getConsoleTheme(id: String): ConsoleTheme {
 }
 
 @Composable
-fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String, String, String) -> Unit) {
+fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String, String, String, String) -> Unit) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var pendingRedirectUrl by remember { mutableStateOf<String?>(null) }
 
@@ -125,33 +125,15 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
             onDismissRequest = { pendingRedirectUrl = null },
             containerColor = Color(0xFF0F141F),
             title = {
-                Text(
-                    text = "Redirect Alert",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
+                Text("Redirect Alert", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             },
             text = {
                 Column {
-                    Text(
-                        text = "This page is attempting to redirect outside to:",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 13.sp
-                    )
+                    Text("This page is attempting to redirect outside to:", color = Color(0xFF94A3B8), fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = targetHost,
-                        color = Color(0xFF38BDF8),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
+                    Text(targetHost, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Do you want to proceed or stay on the current page?",
-                        color = Color(0xFF64748B),
-                        fontSize = 12.sp
-                    )
+                    Text("Do you want to proceed or stay on the current page?", color = Color(0xFF64748B), fontSize = 12.sp)
                 }
             },
             confirmButton = {
@@ -233,7 +215,8 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                                 lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
                                 lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
                             ) {
-                                onDownload(reqUrl, ua, "", "")
+                                val currentUrl = view?.url ?: url
+                                onDownload(reqUrl, ua, "", "", currentUrl)
                                 return true
                             }
 
@@ -251,7 +234,8 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
 
                     setDownloadListener { dl, u, cd, m, _ ->
                         if (!dl.isNullOrEmpty() && !dl.contains(".html", ignoreCase = true)) {
-                            onDownload(dl, u ?: ua, cd ?: "", m ?: "")
+                            val currentUrl = webViewRef?.url ?: url
+                            onDownload(dl, u ?: ua, cd ?: "", m ?: "", currentUrl)
                         }
                     }
                     loadUrl(url)
