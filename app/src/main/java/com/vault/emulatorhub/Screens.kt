@@ -1,9 +1,11 @@
 package com.vault.emulatorhub
 
-import android.content.Context
 import android.net.Uri
+import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
@@ -46,7 +48,7 @@ val AD_BLOCK_DOMAINS = listOf(
     "doubleclick.net", "googleads", "adservice.google", "popads.net",
     "propellerads.com", "exoclick.com", "adsterra.com", "monetag.com",
     "adnxs.com", "syndication.exoclick.com", "trafficjunky", "onclickmega.com",
-    "ad-delivery", "advertising", "clksite.com", "zeroredirect", "popunder"
+    "clksite.com", "zeroredirect", "popunder"
 )
 
 fun formatSize(bytes: Long): String {
@@ -143,15 +145,37 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 WebView(ctx).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.setSupportMultipleWindows(false)
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
+
+                    CookieManager.getInstance().apply {
+                        setAcceptCookie(true)
+                        setAcceptThirdPartyCookies(this@apply, true)
+                    }
+
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        databaseEnabled = true
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                        setSupportZoom(true)
+                        builtInZoomControls = true
+                        displayZoomControls = false
+                        cacheMode = WebSettings.LOAD_DEFAULT
+                        setSupportMultipleWindows(false)
+                        javaScriptCanOpenWindowsAutomatically = true
+                    }
+
                     val ua = settings.userAgentString
 
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                             val req = request?.url?.toString()?.lowercase() ?: return null
-                            if (AD_BLOCK_DOMAINS.any { req.contains(it) }) return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                            if (AD_BLOCK_DOMAINS.any { req.contains(it) }) {
+                                return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+                            }
                             return super.shouldInterceptRequest(view, request)
                         }
 
@@ -195,10 +219,10 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
 fun DownloadsScreen(onClose: () -> Unit) {
     var downloadList by remember { mutableStateOf<List<Download>>(emptyList()) }
     var selectedFilter by remember { mutableStateOf("ALL") }
-    val fetch = remember { Fetch.getDefaultInstance() }
+    val fetch = remember { runCatching { Fetch.Impl.getDefaultInstance() }.getOrNull() }
 
-    LaunchedEffect(Unit) {
-        while (true) {
+    LaunchedEffect(fetch) {
+        while (fetch != null) {
             fetch.getDownloads { downloads ->
                 downloadList = downloads.sortedByDescending { it.id }
             }
@@ -248,7 +272,7 @@ fun DownloadsScreen(onClose: () -> Unit) {
 }
 
 @Composable
-fun DownloadCard(task: Download, fetch: Fetch) {
+fun DownloadCard(task: Download, fetch: Fetch?) {
     val statusLabel = when (task.status) {
         Status.DOWNLOADING -> "DOWNLOADING"
         Status.PAUSED -> "PAUSED"
@@ -276,12 +300,12 @@ fun DownloadCard(task: Download, fetch: Fetch) {
                 Spacer(modifier = Modifier.width(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (task.status == Status.DOWNLOADING || task.status == Status.QUEUED) {
-                        Icon(Icons.Rounded.Pause, "Pause", modifier = Modifier.size(20.dp).clickable { fetch.pause(task.id) }, tint = Color.White)
+                        Icon(Icons.Rounded.Pause, "Pause", modifier = Modifier.size(20.dp).clickable { fetch?.pause(task.id) }, tint = Color.White)
                     } else if (task.status == Status.PAUSED || task.status == Status.FAILED) {
-                        Icon(Icons.Rounded.PlayArrow, "Resume", modifier = Modifier.size(20.dp).clickable { fetch.resume(task.id) }, tint = Color.White)
+                        Icon(Icons.Rounded.PlayArrow, "Resume", modifier = Modifier.size(20.dp).clickable { fetch?.resume(task.id) }, tint = Color.White)
                     }
                     if (task.status != Status.COMPLETED) {
-                        Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(20.dp).clickable { fetch.delete(task.id) }, tint = Color(0xFFFF3366))
+                        Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(20.dp).clickable { fetch?.delete(task.id) }, tint = Color(0xFFFF3366))
                     }
                 }
             }
