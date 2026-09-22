@@ -2,6 +2,7 @@ package com.vault.emulatorhub
 
 import android.app.DownloadManager
 import android.content.Context
+import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -105,6 +106,7 @@ fun getConsoleTheme(id: String): ConsoleTheme {
 @Composable
 fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String, String, String) -> Unit) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var pendingRedirectUrl by remember { mutableStateOf<String?>(null) }
 
     BackHandler {
         val wv = webViewRef
@@ -115,14 +117,84 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
         }
     }
 
+    if (pendingRedirectUrl != null) {
+        val targetUri = Uri.parse(pendingRedirectUrl)
+        val targetHost = targetUri.host ?: "external destination"
+
+        AlertDialog(
+            onDismissRequest = { pendingRedirectUrl = null },
+            containerColor = Color(0xFF0F141F),
+            title = {
+                Text(
+                    text = "Redirect Alert",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "This page is attempting to redirect outside to:",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = targetHost,
+                        color = Color(0xFF38BDF8),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Do you want to proceed or stay on the current page?",
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val destination = pendingRedirectUrl
+                        pendingRedirectUrl = null
+                        if (destination != null) {
+                            webViewRef?.loadUrl(destination)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8))
+                ) {
+                    Text("Proceed", color = Color(0xFF07090E), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { pendingRedirectUrl = null },
+                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.horizontalGradient(listOf(Color(0xFF334155), Color(0xFF334155))))
+                ) {
+                    Text("Stay Here", color = Color(0xFFE2E8F0))
+                }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF0D121D)).padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0D121D))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF1E293B)).border(1.dp, Color(0xFF334155), RoundedCornerShape(10.dp)).clickable { onClose() }.padding(horizontal = 12.dp, vertical = 6.dp)
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF1E293B))
+                    .border(1.dp, Color(0xFF334155), RoundedCornerShape(10.dp))
+                    .clickable { onClose() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text("← Back to Hub", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             }
@@ -150,26 +222,36 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                             }
                             return super.shouldInterceptRequest(view, request)
                         }
-                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                            val req = request?.url?.toString() ?: return false
-                            val l = req.lowercase()
-                            
-                            if (AD_BLOCK_DOMAINS.any { l.contains(it) }) return true
 
-                            if (l.endsWith(".zip") || l.endsWith(".7z") || l.endsWith(".rar") || 
-                                l.endsWith(".nsp") || l.endsWith(".xci") || l.endsWith(".nds") || 
-                                l.endsWith(".gba") || l.endsWith(".iso") || l.endsWith(".exe")
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                            val reqUrl = request?.url?.toString() ?: return false
+                            val lower = reqUrl.lowercase()
+
+                            if (AD_BLOCK_DOMAINS.any { lower.contains(it) }) return true
+
+                            if (lower.endsWith(".zip") || lower.endsWith(".7z") || lower.endsWith(".rar") ||
+                                lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
+                                lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
                             ) {
-                                onDownload(req, ua, "", "")
+                                onDownload(reqUrl, ua, "", "")
                                 return true
                             }
+
+                            val currentHost = view?.url?.let { Uri.parse(it).host?.lowercase() }
+                            val targetHost = request.url?.host?.lowercase()
+
+                            if (currentHost != null && targetHost != null && currentHost != targetHost) {
+                                pendingRedirectUrl = reqUrl
+                                return true
+                            }
+
                             return false
                         }
                     }
 
-                    setDownloadListener { dl, u, cd, m, _ -> 
+                    setDownloadListener { dl, u, cd, m, _ ->
                         if (!dl.isNullOrEmpty() && !dl.contains(".html", ignoreCase = true)) {
-                            onDownload(dl, u ?: ua, cd ?: "", m ?: "") 
+                            onDownload(dl, u ?: ua, cd ?: "", m ?: "")
                         }
                     }
                     loadUrl(url)
@@ -273,4 +355,3 @@ fun DownloadCard(task: DownloadTask) {
         }
     }
 }
-
