@@ -149,10 +149,9 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                     isVerticalScrollBarEnabled = false
                     isHorizontalScrollBarEnabled = false
 
-                    CookieManager.getInstance().apply {
-                        setAcceptCookie(true)
-                        setAcceptThirdPartyCookies(this@apply, true)
-                    }
+                    val cookieManager = CookieManager.getInstance()
+                    cookieManager.setAcceptCookie(true)
+                    cookieManager.setAcceptThirdPartyCookies(this, true)
 
                     settings.apply {
                         javaScriptEnabled = true
