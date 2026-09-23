@@ -10,36 +10,31 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tonyodev.fetch2.Download
 import com.tonyodev.fetch2.Fetch
 import com.tonyodev.fetch2.Status
-import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
 
 enum class ScreenState { HUB, BROWSER, DOWNLOADS }
@@ -224,7 +219,6 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
         )
     }
 }
-
 @Composable
 fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -> Unit, onOpenDownloads: () -> Unit) {
     val context = LocalContext.current
@@ -359,4 +353,71 @@ fun DownloadsScreen(onClose: () -> Unit) {
             listOf("ALL", "ACTIVE", "PAUSED", "COMPLETED").forEach { tag ->
                 val isSelected = selectedFilter == tag
                 Box(modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF131823)).border(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B), RoundedCornerShape(10.dp)).clickable { selectedFilter = tag }.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Text(tag, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3
+                    Text(tag, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3B8))
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(18.dp))
+        if (filteredList.isEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text("No files in this queue.", color = Color(0xFF475569), fontSize = 14.sp)
+            }
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(filteredList) { item -> DownloadCard(task = item, fetch = fetch) }
+            }
+        }
+    }
+}
+
+@Composable
+fun DownloadCard(task: Download, fetch: Fetch?) {
+    val statusLabel = when (task.status) {
+        Status.DOWNLOADING -> "DOWNLOADING"
+        Status.PAUSED -> "PAUSED"
+        Status.QUEUED -> "QUEUED"
+        Status.COMPLETED -> "COMPLETED"
+        Status.FAILED -> "FAILED"
+        Status.CANCELLED -> "CANCELLED"
+        else -> "UNKNOWN"
+    }
+    val statusColor = when (task.status) {
+        Status.DOWNLOADING -> Color(0xFF00E5FF)
+        Status.QUEUED, Status.PAUSED -> Color(0xFFFFB300)
+        Status.COMPLETED -> Color(0xFF10B981)
+        Status.FAILED, Status.CANCELLED -> Color(0xFFFF3366)
+        else -> Color(0xFF94A3B8)
+    }
+    
+    val progress = if (task.total > 0L) (task.downloaded.toFloat() / task.total.toFloat()).coerceIn(0f, 1f) else 0f
+
+    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF0E131E)).border(1.dp, Color(0xFF1A2234), RoundedCornerShape(16.dp)).padding(14.dp)) {
+        Column {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(task.file.substringAfterLast("/"), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (task.status == Status.DOWNLOADING || task.status == Status.QUEUED) {
+                        Icon(Icons.Rounded.Pause, "Pause", modifier = Modifier.size(20.dp).clickable { fetch?.pause(task.id) }, tint = Color.White)
+                    } else if (task.status == Status.PAUSED || task.status == Status.FAILED) {
+                        Icon(Icons.Rounded.PlayArrow, "Resume", modifier = Modifier.size(20.dp).clickable { fetch?.resume(task.id) }, tint = Color.White)
+                    }
+                    if (task.status != Status.COMPLETED) {
+                        Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(20.dp).clickable { fetch?.delete(task.id) }, tint = Color(0xFFFF3366))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = statusColor, trackColor = Color(0xFF1E293B))
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${formatSize(task.downloaded)} / ${formatSize(task.total)}", fontSize = 11.sp, color = Color(0xFF64748B))
+                if (task.status == Status.DOWNLOADING) {
+                    Text(formatSpeed(task.downloadedBytesPerSecond), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                } else {
+                    Text(statusLabel, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = statusColor)
+                }
+            }
+        }
+    }
+}
