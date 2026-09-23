@@ -148,6 +148,12 @@ class MainActivity : ComponentActivity() {
 
     private fun downloadFile(url: String, userAgent: String, contentDisposition: String, mimetype: String, referer: String) {
         val filename = URLUtil.guessFileName(url, contentDisposition, mimetype)
+        
+        if (url.lowercase().contains(".html") || url.lowercase().contains(".php") || filename.lowercase().endsWith(".html")) {
+            Toast.makeText(this, "Blocked fake HTML ad page! Tap the real download link.", Toast.LENGTH_LONG).show()
+            return
+        }
+
         val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if (!dir.exists()) dir.mkdirs()
 
