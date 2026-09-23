@@ -8,6 +8,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -223,6 +226,101 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
 }
 
 @Composable
+fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -> Unit, onOpenDownloads: () -> Unit) {
+    val context = LocalContext.current
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("VAULT HUB", fontSize = 30.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.SansSerif, letterSpacing = 1.5.sp, color = Color(0xFFF1F5F9))
+                    Text("EMULATOR REPOSITORIES", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Color(0xFF64748B))
+                }
+                val interactionSource = remember { MutableInteractionSource() }
+                val isDownloadsPressed by interactionSource.collectIsPressedAsState()
+                val dScale by animateFloatAsState(if (isDownloadsPressed) 0.90f else 1f, label = "bounce")
+
+                Box(modifier = Modifier.scale(dScale).clip(RoundedCornerShape(16.dp)).background(Color(0xFF131823)).border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp)).clickable(interactionSource = interactionSource, indication = null, onClick = onOpenDownloads).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF38BDF8)))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("DOWNLOADS", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF38BDF8), letterSpacing = 1.sp)
+                    }
+                }
+            }
+        }
+
+        item {
+            Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(Color(0xFF131A29), Color(0xFF0E131F)))).border(1.dp, Color(0xFF1E293B), RoundedCornerShape(18.dp)).padding(16.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column {
+                        Text("CORE STATUS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B), letterSpacing = 1.5.sp)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("${platforms.size} Repositories Connected", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                    Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF10B981).copy(alpha = 0.15f)).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                        Text("AD-SHIELD ON", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                    }
+                }
+            }
+        }
+
+        item { Text("AVAILABLE PLATFORMS", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = Color(0xFF475569), modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)) }
+
+        items(platforms) { console ->
+            ConsoleCard(
+                console = console,
+                onClick = {
+                    if (console.id.lowercase() == "switch") {
+                        Toast.makeText(context, "Nintendo Switch support is under development!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        onSelectPlatform(console.url)
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
+    val theme = remember(console.id) { getConsoleTheme(console.id) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "bounce")
+
+    Box(
+        modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(20.dp)).background(theme.brush).border(1.dp, theme.accent.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick).padding(16.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.width(4.dp).height(58.dp).clip(RoundedCornerShape(2.dp)).background(theme.accent))
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(console.name, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFF8FAFC))
+                    Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(theme.accent.copy(alpha = 0.15f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                        Text(theme.badge, fontSize = 8.sp, fontWeight = FontWeight.Black, color = theme.accent, letterSpacing = 0.5.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("TARGET: ${console.subtitle}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF94A3B8))
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    theme.chips.forEach { chip ->
+                        Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF090D14)).border(1.dp, Color(0xFF1E293B), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) {
+                            Text(chip, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B))
+                        }
+                    }
+                }
+            }
+            Box(modifier = Modifier.size(38.dp).clip(CircleShape).background(Color(0xFF0F141F)).border(1.dp, theme.accent.copy(alpha = 0.35f), CircleShape), contentAlignment = Alignment.Center) {
+                Text("→", color = theme.accent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
 fun DownloadsScreen(onClose: () -> Unit) {
     var downloadList by remember { mutableStateOf<List<Download>>(emptyList()) }
     var selectedFilter by remember { mutableStateOf("ALL") }
@@ -261,72 +359,4 @@ fun DownloadsScreen(onClose: () -> Unit) {
             listOf("ALL", "ACTIVE", "PAUSED", "COMPLETED").forEach { tag ->
                 val isSelected = selectedFilter == tag
                 Box(modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF131823)).border(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B), RoundedCornerShape(10.dp)).clickable { selectedFilter = tag }.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Text(tag, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3B8))
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(18.dp))
-        if (filteredList.isEmpty()) {
-            Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Text("No files in this queue.", color = Color(0xFF475569), fontSize = 14.sp)
-            }
-        } else {
-            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(filteredList) { item -> DownloadCard(task = item, fetch = fetch) }
-            }
-        }
-    }
-}
-
-@Composable
-fun DownloadCard(task: Download, fetch: Fetch?) {
-    val statusLabel = when (task.status) {
-        Status.DOWNLOADING -> "DOWNLOADING"
-        Status.PAUSED -> "PAUSED"
-        Status.QUEUED -> "QUEUED"
-        Status.COMPLETED -> "COMPLETED"
-        Status.FAILED -> "FAILED"
-        Status.CANCELLED -> "CANCELLED"
-        else -> "UNKNOWN"
-    }
-    val statusColor = when (task.status) {
-        Status.DOWNLOADING -> Color(0xFF00E5FF)
-        Status.QUEUED, Status.PAUSED -> Color(0xFFFFB300)
-        Status.COMPLETED -> Color(0xFF10B981)
-        Status.FAILED, Status.CANCELLED -> Color(0xFFFF3366)
-        else -> Color(0xFF94A3B8)
-    }
-    
-    val progress = if (task.total > 0L) (task.downloaded.toFloat() / task.total.toFloat()).coerceIn(0f, 1f) else 0f
-    val percentText = if (task.total > 0L) "${task.progress}%" else "--"
-
-    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF0E131E)).border(1.dp, Color(0xFF1A2234), RoundedCornerShape(16.dp)).padding(14.dp)) {
-        Column {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(task.file.substringAfterLast("/"), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Spacer(modifier = Modifier.width(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (task.status == Status.DOWNLOADING || task.status == Status.QUEUED) {
-                        Icon(Icons.Rounded.Pause, "Pause", modifier = Modifier.size(20.dp).clickable { fetch?.pause(task.id) }, tint = Color.White)
-                    } else if (task.status == Status.PAUSED || task.status == Status.FAILED) {
-                        Icon(Icons.Rounded.PlayArrow, "Resume", modifier = Modifier.size(20.dp).clickable { fetch?.resume(task.id) }, tint = Color.White)
-                    }
-                    if (task.status != Status.COMPLETED) {
-                        Icon(Icons.Rounded.Close, "Cancel", modifier = Modifier.size(20.dp).clickable { fetch?.delete(task.id) }, tint = Color(0xFFFF3366))
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = statusColor, trackColor = Color(0xFF1E293B))
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${formatSize(task.downloaded)} / ${formatSize(task.total)}", fontSize = 11.sp, color = Color(0xFF64748B))
-                if (task.status == Status.DOWNLOADING) {
-                    Text(formatSpeed(task.downloadedBytesPerSecond), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
-                } else {
-                    Text(statusLabel, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = statusColor)
-                }
-            }
-        }
-    }
-}
+                    Text(tag, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3
