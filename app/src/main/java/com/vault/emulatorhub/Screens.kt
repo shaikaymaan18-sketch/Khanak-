@@ -83,9 +83,9 @@ fun getConsoleTheme(id: String): ConsoleTheme {
         "nds" -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF221138), Color(0xFF120E22))), Color(0xFFBD00FF), "DUAL SCREEN", listOf("NDS", "ZIP", "SAV"))
         "gba" -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF2A1C0B), Color(0xFF14130E))), Color(0xFFFFB300), "CLASSIC", listOf("GBA", "BIN", "SAV"))
         else -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF161E2E), Color(0xFF0E131F))), Color(0xFF38BDF8), "CONSOLE", listOf("ARCHIVE", "ROM"))
+        
     }
 }
-
 @Composable
 fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String, String, String, String) -> Unit) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -362,8 +362,6 @@ fun DownloadsScreen(onClose: () -> Unit) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("ALL", "ACTIVE", "PAUSED", "COMPLETED").forEach { tag ->
                 val isSelected = selectedFilter == tag
-                Box(modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF131823)).border(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B), RoundedCornerS
-                                val isSelected = selectedFilter == tag
                 Box(modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF131823)).border(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B), RoundedCornerShape(10.dp)).clickable { selectedFilter = tag }.padding(horizontal = 10.dp, vertical = 6.dp)) {
                     Text(tag, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (isSelected) Color(0xFF07090E) else Color(0xFF94A3B8))
                 }
@@ -433,3 +431,4 @@ fun DownloadCard(task: Download, fetch: Fetch?) {
         }
     }
 }
+
