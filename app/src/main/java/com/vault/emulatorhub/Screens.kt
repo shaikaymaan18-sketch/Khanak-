@@ -183,6 +183,10 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                             val lower = reqUrl.lowercase()
                             if (AD_BLOCK_DOMAINS.any { lower.contains(it) }) return true
 
+                            if (lower.contains(".html") || lower.contains(".php") || lower.contains(".aspx")) {
+                                return false
+                            }
+
                             if (lower.endsWith(".zip") || lower.endsWith(".7z") || lower.endsWith(".rar") ||
                                 lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
                                 lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
@@ -202,7 +206,11 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                     }
 
                     setDownloadListener { dl, u, cd, m, _ ->
-                        if (!dl.isNullOrEmpty() && !dl.contains(".html", ignoreCase = true)) {
+                        if (!dl.isNullOrEmpty() && 
+                            !dl.contains(".html", ignoreCase = true) && 
+                            !dl.contains(".php", ignoreCase = true) &&
+                            !dl.contains(".aspx", ignoreCase = true)
+                        ) {
                             onDownload(dl, u ?: ua, cd ?: "", m ?: "", webViewRef?.url ?: url)
                         }
                     }
