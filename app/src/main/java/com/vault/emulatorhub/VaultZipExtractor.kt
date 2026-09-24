@@ -1,5 +1,6 @@
 package com.vault.emulatorhub
 
+import android.webkit.CookieManager
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -24,14 +25,19 @@ object VaultZipExtractor {
                 val url = URL(fileUrl)
                 val connection = url.openConnection() as HttpURLConnection
                 
-                // Full browser headers to prevent server blocks and HTTP 500 errors
+                // Injects active WebView cookies so the server keeps the session alive if you leave the page
+                val cookies = CookieManager.getInstance().getCookie(fileUrl)
+                if (!cookies.isNullOrEmpty()) {
+                    connection.setRequestProperty("Cookie", cookies)
+                }
+
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                 connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
                 connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
                 connection.setRequestProperty("Referer", url.protocol + "://" + url.host + "/")
                 connection.instanceFollowRedirects = true
-                connection.connectTimeout = 20000
-                connection.readTimeout = 20000
+                connection.connectTimeout = 30000
+                connection.readTimeout = 30000
                 connection.connect()
 
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) {
