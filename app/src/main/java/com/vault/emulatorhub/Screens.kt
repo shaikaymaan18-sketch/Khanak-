@@ -1,6 +1,8 @@
 package com.vault.emulatorhub
 
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
@@ -45,6 +47,7 @@ import com.tonyodev.fetch2.Fetch
 import com.tonyodev.fetch2.Status
 import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
+import java.io.File
 
 enum class ScreenState { HUB, BROWSER, DOWNLOADS }
 data class PlatformConfig(val platforms: List<ConsoleSource>)
@@ -83,13 +86,14 @@ fun getConsoleTheme(id: String): ConsoleTheme {
         "nds" -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF221138), Color(0xFF120E22))), Color(0xFFBD00FF), "DUAL SCREEN", listOf("NDS", "ZIP", "SAV"))
         "gba" -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF2A1C0B), Color(0xFF14130E))), Color(0xFFFFB300), "CLASSIC", listOf("GBA", "BIN", "SAV"))
         else -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF161E2E), Color(0xFF0E131F))), Color(0xFF38BDF8), "CONSOLE", listOf("ARCHIVE", "ROM"))
-        
     }
 }
+
 @Composable
 fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String, String, String, String) -> Unit) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var pendingRedirectUrl by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
     BackHandler {
         val wv = webViewRef
@@ -198,7 +202,29 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                                 lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
                                 lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
                             ) {
-                                onDownload(reqUrl, ua, "", "", view?.url ?: url)
+                                if (lower.endsWith(".zip")) {
+                                    val fileName = reqUrl.substringAfterLast("/").substringBeforeLast(".zip", "extracted_game")
+                                    val targetFolder = File(context.filesDir, "vault_games/$fileName")
+                                    
+                                    Handler(Looper.getMainLooper()).post {
+                                        Toast.makeText(context, "Streaming extraction started for $fileName...", Toast.LENGTH_SHORT).show()
+                                    }
+
+                                    VaultZipExtractor.extractStreamToDirectory(
+                                        fileUrl = reqUrl,
+                                        targetDirectory = targetFolder
+                                    ) { success, message ->
+                                        Handler(Looper.getMainLooper()).post {
+                                            if (success) {
+                                                Toast.makeText(context, "Ready to Play! $fileName extracted.", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    onDownload(reqUrl, ua, "", "", view?.url ?: url)
+                                }
                                 return true
                             }
 
@@ -218,7 +244,29 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                             !dl.contains(".php", ignoreCase = true) &&
                             !dl.contains(".aspx", ignoreCase = true)
                         ) {
-                            onDownload(dl, u ?: ua, cd ?: "", m ?: "", webViewRef?.url ?: url)
+                            if (dl.lowercase().endsWith(".zip")) {
+                                val fileName = dl.substringAfterLast("/").substringBeforeLast(".zip", "extracted_game")
+                                val targetFolder = File(context.filesDir, "vault_games/$fileName")
+                                
+                                Handler(Looper.getMainLooper()).post {
+                                    Toast.makeText(context, "Streaming extraction started for $fileName...", Toast.LENGTH_SHORT).show()
+                                }
+
+                                VaultZipExtractor.extractStreamToDirectory(
+                                    fileUrl = dl,
+                                    targetDirectory = targetFolder
+                                ) { success, message ->
+                                    Handler(Looper.getMainLooper()).post {
+                                        if (success) {
+                                            Toast.makeText(context, "Ready to Play! $fileName extracted.", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            } else {
+                                onDownload(dl, u ?: ua, cd ?: "", m ?: "", webViewRef?.url ?: url)
+                            }
                         }
                     }
                     loadUrl(url)
@@ -286,6 +334,27 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
 }
 
 @Composable
+fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
+    val theme = remember(console.id) { getConsoleTheme(console.id) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "bounce")
+
+    Box(
+        modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(20.dp)).background(theme.brush).border(1.dp, theme.accent.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick).padding(16.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.width(4.dp).height(58.dp).clip(RoundedCornerShape(2.dp)).background(theme.accent))
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(console.name, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFF8FAFC))
+                    Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(theme.accent.copy(alpha = 0.15f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                        Text(theme.badge, fontSize = 8.sp, fontWeight = FontWeight.Black, color = theme.accent, letterSpacing = 0.5.sp)
+                    }
+                }
+   @Composable
 fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
     val theme = remember(console.id) { getConsoleTheme(console.id) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -431,4 +500,3 @@ fun DownloadCard(task: Download, fetch: Fetch?) {
         }
     }
 }
-
