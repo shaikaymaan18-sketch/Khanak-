@@ -1,8 +1,8 @@
 package com.vault.emulatorhub
 
 import android.net.Uri
-import android.os.Handler
 import android.os.Environment
+import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
@@ -25,10 +25,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,14 +36,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.tonyodev.fetch2.Download
-import com.tonyodev.fetch2.Fetch
-import com.tonyodev.fetch2.Status
-import kotlinx.coroutines.delay
+import com.tonyodev.fetch2.*
 import java.io.ByteArrayInputStream
 import java.io.File
 
@@ -89,6 +81,42 @@ fun getConsoleTheme(id: String): ConsoleTheme {
         "gba" -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF2A1C0B), Color(0xFF14130E))), Color(0xFFFFB300), "CLASSIC", listOf("GBA", "BIN", "SAV"))
         else -> ConsoleTheme(Brush.horizontalGradient(listOf(Color(0xFF161E2E), Color(0xFF0E131F))), Color(0xFF38BDF8), "CONSOLE", listOf("ARCHIVE", "ROM"))
     }
+}
+
+fun enqueueDownload(context: android.content.Context, fileUrl: String) {
+    val fetch = runCatching { Fetch.Impl.getDefaultInstance() }.getOrNull() ?: return
+    val fileName = fileUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
+    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    val targetFile = File(downloadsDir, "VaultGames/$fileName")
+
+    val request = Request(fileUrl, targetFile.absolutePath).apply {
+        priority = Priority.HIGH
+        networkType = NetworkType.ALL
+    }
+
+    fetch.enqueue(request, { _ ->
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context, "Download started: $fileName", Toast.LENGTH_SHORT).show()
+        }
+    }, { error ->
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context, "Download failed: ${error.name}", Toast.LENGTH_LONG).show()
+        }
+    })
+
+    fetch.addListener(object : AbstractFetchListener() {
+        override fun onCompleted(download: Download) {
+            if (download.file == targetFile.absolutePath) {
+                val gameFolder = File(downloadsDir, "VaultGames/${fileName.substringBeforeLast(".")}")
+                VaultZipExtractor.extractLocalZip(targetFile, gameFolder) { _, message ->
+                    Handler(Looper.getMainLooper()).post {
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    }
+                }
+                fetch.removeListener(this)
+            }
+        }
+    })
 }
 
 @Composable
@@ -180,8 +208,6 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                         javaScriptCanOpenWindowsAutomatically = true
                     }
 
-                    val ua = settings.userAgentString
-
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                             val req = request?.url?.toString()?.lowercase() ?: return null
@@ -200,30 +226,11 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                                 return false
                             }
 
-                            if (lower.endsWith(".zip") || lower.endsWith(".7z") || lower.endsWith(".rar") ||
+                            if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z") ||
                                 lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
                                 lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
                             ) {
-                                val fileName = reqUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
-                                val targetFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VaultGames/$fileName")
-                                
-                                
-                                Handler(Looper.getMainLooper()).post {
-                                    Toast.makeText(context, "Streaming extraction started...", Toast.LENGTH_SHORT).show()
-                                }
-
-                                VaultZipExtractor.extractStreamToDirectory(
-                                    fileUrl = reqUrl,
-                                    targetDirectory = targetFolder
-                                ) { success, message ->
-                                    Handler(Looper.getMainLooper()).post {
-                                        if (success) {
-                                            Toast.makeText(context, "Ready to Play!", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
+                                enqueueDownload(context, reqUrl)
                                 return true
                             }
 
@@ -237,31 +244,13 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                         }
                     }
 
-                    setDownloadListener { dl, u, cd, m, _ ->
+                    setDownloadListener { dl, _, _, _, _ ->
                         if (!dl.isNullOrEmpty() && 
                             !dl.contains(".html", ignoreCase = true) && 
                             !dl.contains(".php", ignoreCase = true) &&
                             !dl.contains(".aspx", ignoreCase = true)
                         ) {
-                            val fileName = dl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
-                            val targetFolder = File(context.filesDir, "vault_games/$fileName")
-                            
-                            Handler(Looper.getMainLooper()).post {
-                                Toast.makeText(context, "Streaming extraction started...", Toast.LENGTH_SHORT).show()
-                            }
-
-                            VaultZipExtractor.extractStreamToDirectory(
-                                fileUrl = dl,
-                                targetDirectory = targetFolder
-                            ) { success, message ->
-                                Handler(Looper.getMainLooper()).post {
-                                    if (success) {
-                                        Toast.makeText(context, "Ready to Play!", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            }
+                            enqueueDownload(context, dl)
                         }
                     }
                     loadUrl(url)
@@ -298,7 +287,6 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
             }
         }
 
-        // --- CUSTOM URL & WEB SEARCH BAR ---
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -357,7 +345,7 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
                         Spacer(modifier = Modifier.height(2.dp))
                         Text("${platforms.size} Repositories Connected", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
-                    Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF10B981).copy(alpha = 0.15f)).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                    Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF10B981).colorMatrixAlpha(0.15f)).padding(horizontal = 10.dp, vertical = 4.dp)) {
                         Text("AD-SHIELD ON", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
                     }
                 }
@@ -367,7 +355,7 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
         item { Text("AVAILABLE PLATFORMS", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = Color(0xFF475569), modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)) }
 
         items(platforms) { console ->
-               ConsoleCard(
+            ConsoleCard(
                 console = console,
                 onClick = {
                     if (console.id.lowercase() == "switch") {
@@ -379,9 +367,7 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
             )
         }
     }
-}
-
-@Composable
+    @Composable
 fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
     val theme = remember(console.id) { getConsoleTheme(console.id) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -431,7 +417,7 @@ fun DownloadsScreen(onClose: () -> Unit) {
             fetch.getDownloads { downloads ->
                 downloadList = downloads.sortedByDescending { it.id }
             }
-            delay(1000)
+            delay(500)
         }
     }
 
@@ -496,6 +482,7 @@ fun DownloadCard(task: Download, fetch: Fetch?) {
     }
     
     val progress = if (task.total > 0L) (task.downloaded.toFloat() / task.total.toFloat()).coerceIn(0f, 1f) else 0f
+    val percentInt = (progress * 100).toInt()
 
     Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF0E131E)).border(1.dp, Color(0xFF1A2234), RoundedCornerShape(16.dp)).padding(14.dp)) {
         Column {
@@ -517,7 +504,7 @@ fun DownloadCard(task: Download, fetch: Fetch?) {
             LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = statusColor, trackColor = Color(0xFF1E293B))
             Spacer(modifier = Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${formatSize(task.downloaded)} / ${formatSize(task.total)}", fontSize = 11.sp, color = Color(0xFF64748B))
+                Text("${formatSize(task.downloaded)} / ${formatSize(task.total)} ($percentInt%)", fontSize = 11.sp, color = Color(0xFF64748B))
                 if (task.status == Status.DOWNLOADING) {
                     Text(formatSpeed(task.downloadedBytesPerSecond), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
                 } else {
@@ -526,4 +513,6 @@ fun DownloadCard(task: Download, fetch: Fetch?) {
             }
         }
     }
+}
+
 }
