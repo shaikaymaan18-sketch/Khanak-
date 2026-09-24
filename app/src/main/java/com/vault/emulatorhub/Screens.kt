@@ -13,6 +13,7 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -202,28 +203,24 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                                 lower.endsWith(".nsp") || lower.endsWith(".xci") || lower.endsWith(".nds") ||
                                 lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
                             ) {
-                                if (lower.endsWith(".zip")) {
-                                    val fileName = reqUrl.substringAfterLast("/").substringBeforeLast(".zip", "extracted_game")
-                                    val targetFolder = File(context.filesDir, "vault_games/$fileName")
-                                    
-                                    Handler(Looper.getMainLooper()).post {
-                                        Toast.makeText(context, "Streaming extraction started for $fileName...", Toast.LENGTH_SHORT).show()
-                                    }
+                                val fileName = reqUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
+                                val targetFolder = File(context.filesDir, "vault_games/$fileName")
+                                
+                                Handler(Looper.getMainLooper()).post {
+                                    Toast.makeText(context, "Streaming extraction started...", Toast.LENGTH_SHORT).show()
+                                }
 
-                                    VaultZipExtractor.extractStreamToDirectory(
-                                        fileUrl = reqUrl,
-                                        targetDirectory = targetFolder
-                                    ) { success, message ->
-                                        Handler(Looper.getMainLooper()).post {
-                                            if (success) {
-                                                Toast.makeText(context, "Ready to Play! $fileName extracted.", Toast.LENGTH_LONG).show()
-                                            } else {
-                                                Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
-                                            }
+                                VaultZipExtractor.extractStreamToDirectory(
+                                    fileUrl = reqUrl,
+                                    targetDirectory = targetFolder
+                                ) { success, message ->
+                                    Handler(Looper.getMainLooper()).post {
+                                        if (success) {
+                                            Toast.makeText(context, "Ready to Play!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
                                         }
                                     }
-                                } else {
-                                    onDownload(reqUrl, ua, "", "", view?.url ?: url)
                                 }
                                 return true
                             }
@@ -244,28 +241,24 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                             !dl.contains(".php", ignoreCase = true) &&
                             !dl.contains(".aspx", ignoreCase = true)
                         ) {
-                            if (dl.lowercase().endsWith(".zip")) {
-                                val fileName = dl.substringAfterLast("/").substringBeforeLast(".zip", "extracted_game")
-                                val targetFolder = File(context.filesDir, "vault_games/$fileName")
-                                
-                                Handler(Looper.getMainLooper()).post {
-                                    Toast.makeText(context, "Streaming extraction started for $fileName...", Toast.LENGTH_SHORT).show()
-                                }
+                            val fileName = dl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
+                            val targetFolder = File(context.filesDir, "vault_games/$fileName")
+                            
+                            Handler(Looper.getMainLooper()).post {
+                                Toast.makeText(context, "Streaming extraction started...", Toast.LENGTH_SHORT).show()
+                            }
 
-                                VaultZipExtractor.extractStreamToDirectory(
-                                    fileUrl = dl,
-                                    targetDirectory = targetFolder
-                                ) { success, message ->
-                                    Handler(Looper.getMainLooper()).post {
-                                        if (success) {
-                                            Toast.makeText(context, "Ready to Play! $fileName extracted.", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
-                                        }
+                            VaultZipExtractor.extractStreamToDirectory(
+                                fileUrl = dl,
+                                targetDirectory = targetFolder
+                            ) { success, message ->
+                                Handler(Looper.getMainLooper()).post {
+                                    if (success) {
+                                        Toast.makeText(context, "Ready to Play!", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Extraction failed: $message", Toast.LENGTH_LONG).show()
                                     }
                                 }
-                            } else {
-                                onDownload(dl, u ?: ua, cd ?: "", m ?: "", webViewRef?.url ?: url)
                             }
                         }
                     }
@@ -280,6 +273,8 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
 @Composable
 fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -> Unit, onOpenDownloads: () -> Unit) {
     val context = LocalContext.current
+    var customUrlInput by remember { mutableStateOf("") }
+
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -296,6 +291,57 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
                         Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF38BDF8)))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("DOWNLOADS", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF38BDF8), letterSpacing = 1.sp)
+                    }
+                }
+            }
+        }
+
+        // --- CUSTOM URL & WEB SEARCH BAR ---
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A29)),
+                border = BorderStroke(1.dp, Color(0xFF1E293B))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text("CUSTOM URL / WEB SEARCH", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B), letterSpacing = 1.5.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = customUrlInput,
+                            onValueChange = { customUrlInput = it },
+                            placeholder = { Text("Paste link or search web...", color = Color(0xFF475569), fontSize = 12.sp) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF1E293B),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = Color(0xFF38BDF8)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        Button(
+                            onClick = {
+                                val input = customUrlInput.trim()
+                                if (input.isNotEmpty()) {
+                                    val targetUrl = when {
+                                        input.startsWith("http://") || input.startsWith("https://") -> input
+                                        input.contains(".") && !input.contains(" ") -> "https://$input"
+                                        else -> "https://www.google.com/search?q=${Uri.encode(input)}"
+                                    }
+                                    onSelectPlatform(targetUrl)
+                                } else {
+                                    Toast.makeText(context, "Please enter a link or search query", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Go", color = Color(0xFF07090E), fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -319,7 +365,7 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
         item { Text("AVAILABLE PLATFORMS", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = Color(0xFF475569), modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)) }
 
         items(platforms) { console ->
-            ConsoleCard(
+               ConsoleCard(
                 console = console,
                 onClick = {
                     if (console.id.lowercase() == "switch") {
