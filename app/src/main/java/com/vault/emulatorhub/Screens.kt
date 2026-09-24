@@ -25,10 +25,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,12 +36,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tonyodev.fetch2.*
-import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
 import java.io.File
 
@@ -264,10 +258,7 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                 }
             }
         )
-    }
-}
-
-@Composable
+    }@Composable
 fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -> Unit, onOpenDownloads: () -> Unit) {
     val context = LocalContext.current
     var customUrlInput by remember { mutableStateOf("") }
@@ -372,7 +363,10 @@ fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -
                 }
             )
         }
-    }@Composable
+    }
+}
+
+@Composable
 fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
     val theme = remember(console.id) { getConsoleTheme(console.id) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -410,6 +404,14 @@ fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
         }
     }
 }
+
+}
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.delay
 
 @Composable
 fun DownloadsScreen(onClose: () -> Unit) {
@@ -519,6 +521,3 @@ fun DownloadCard(task: Download, fetch: Fetch?) {
         }
     }
 }
-
-}
-
