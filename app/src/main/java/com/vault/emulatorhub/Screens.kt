@@ -204,7 +204,8 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                                 lower.endsWith(".gba") || lower.endsWith(".iso") || lower.endsWith(".exe")
                             ) {
                                 val fileName = reqUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
-                                val targetFolder = File(context.filesDir, "vault_games/$fileName")
+                                val targetFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VaultGames/$fileName")
+                                
                                 
                                 Handler(Looper.getMainLooper()).post {
                                     Toast.makeText(context, "Streaming extraction started...", Toast.LENGTH_SHORT).show()
