@@ -23,10 +23,15 @@ object VaultZipExtractor {
 
                 val url = URL(fileUrl)
                 val connection = url.openConnection() as HttpURLConnection
-                // Set browser User-Agent to prevent server blocks/403 errors
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
+                
+                // Full browser headers to prevent server blocks and HTTP 500 errors
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+                connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                connection.setRequestProperty("Referer", url.protocol + "://" + url.host + "/")
+                connection.instanceFollowRedirects = true
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
                 connection.connect()
 
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) {
@@ -39,7 +44,6 @@ object VaultZipExtractor {
                 val readCount = bufferedStream.read(header)
                 bufferedStream.reset()
 
-                // Check if file is a ZIP archive by inspecting magic bytes ("PK" -> 0x50, 0x4B)
                 val isZip = readCount >= 2 && header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()
 
                 if (isZip) {
@@ -72,7 +76,6 @@ object VaultZipExtractor {
                         }
                     }
                 } else {
-                    // Not a zip file (e.g. direct .gba, .nds), save it directly to the folder
                     val fileName = fileUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "rom_game.bin" }
                     val targetFile = File(targetDirectory, fileName)
                     FileOutputStream(targetFile).use { outputStream ->
