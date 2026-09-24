@@ -354,27 +354,6 @@ fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
                         Text(theme.badge, fontSize = 8.sp, fontWeight = FontWeight.Black, color = theme.accent, letterSpacing = 0.5.sp)
                     }
                 }
-   @Composable
-fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
-    val theme = remember(console.id) { getConsoleTheme(console.id) }
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "bounce")
-
-    Box(
-        modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(20.dp)).background(theme.brush).border(1.dp, theme.accent.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick).padding(16.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.width(4.dp).height(58.dp).clip(RoundedCornerShape(2.dp)).background(theme.accent))
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(console.name, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFF8FAFC))
-                    Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(theme.accent.copy(alpha = 0.15f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                        Text(theme.badge, fontSize = 8.sp, fontWeight = FontWeight.Black, color = theme.accent, letterSpacing = 0.5.sp)
-                    }
-                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text("TARGET: ${console.subtitle}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF94A3B8))
                 Spacer(modifier = Modifier.height(8.dp))
