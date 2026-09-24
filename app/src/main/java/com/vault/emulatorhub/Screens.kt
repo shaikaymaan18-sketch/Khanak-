@@ -25,6 +25,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,10 +40,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tonyodev.fetch2.*
+import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
 import java.io.File
 
@@ -258,7 +264,10 @@ fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String,
                 }
             }
         )
-    }@Composable
+    }
+}
+
+@Composable
 fun DashboardScreen(platforms: List<ConsoleSource>, onSelectPlatform: (String) -> Unit, onOpenDownloads: () -> Unit) {
     val context = LocalContext.current
     var customUrlInput by remember { mutableStateOf("") }
@@ -374,7 +383,7 @@ fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
     val scale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "bounce")
 
     Box(
-        modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(20.dp)).background(theme.brush).border(1.dp, theme.accent.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(20.dp)).background(theme.brush).border(1.dp, theme.accent.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick).padding(16.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -404,14 +413,6 @@ fun ConsoleCard(console: ConsoleSource, onClick: () -> Unit) {
         }
     }
 }
-
-}
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.ui.text.style.TextOverflow
-import kotlinx.coroutines.delay
 
 @Composable
 fun DownloadsScreen(onClose: () -> Unit) {
