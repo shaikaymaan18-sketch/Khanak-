@@ -1,19 +1,15 @@
 package com.vault.emulatorhub
 
-import android.webkit.CookieManager
-import java.io.BufferedInputStream
+import com.github.junrar.Junrar
 import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.FileInputStream
 import java.util.zip.ZipInputStream
 
 object VaultZipExtractor {
 
-    fun extractStreamToDirectory(
-        fileUrl: String,
+    fun extractLocalZip(
+        zipFile: File,
         targetDirectory: File,
-        onProgress: ((String) -> Unit)? = null,
         onComplete: (Boolean, String) -> Unit
     ) {
         Thread {
@@ -22,81 +18,64 @@ object VaultZipExtractor {
                     targetDirectory.mkdirs()
                 }
 
-                val url = URL(fileUrl)
-                val connection = url.openConnection() as HttpURLConnection
-                
-                // Injects active WebView cookies so the server keeps the session alive if you leave the page
-                val cookies = CookieManager.getInstance().getCookie(fileUrl)
-                if (!cookies.isNullOrEmpty()) {
-                    connection.setRequestProperty("Cookie", cookies)
-                }
+                if (zipFile.exists() && zipFile.length() > 4) {
+                    val header = ByteArray(4)
+                    FileInputStream(zipFile).use { fis ->
+                        fis.read(header)
+                    }
 
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-                connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
-                connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-                connection.setRequestProperty("Referer", url.protocol + "://" + url.host + "/")
-                connection.instanceFollowRedirects = true
-                connection.connectTimeout = 30000
-                connection.readTimeout = 30000
-                connection.connect()
+                    // Check magic bytes for ZIP ("PK" -> 0x50, 0x4B)
+                    val isZip = header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()
+                    
+                    // Check magic bytes for RAR ("Rar!" -> 0x52, 0x61, 0x72, 0x21)
+                    val isRar = header[0] == 0x52.toByte() && 
+                                header[1] == 0x61.toByte() && 
+                                header[2] == 0x72.toByte() && 
+                                header[3] == 0x21.toByte()
 
-                if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                    throw Exception("HTTP Error: ${connection.responseCode}")
-                }
-
-                val bufferedStream = BufferedInputStream(connection.inputStream)
-                bufferedStream.mark(4)
-                val header = ByteArray(2)
-                val readCount = bufferedStream.read(header)
-                bufferedStream.reset()
-
-                val isZip = readCount >= 2 && header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()
-
-                if (isZip) {
-                    ZipInputStream(bufferedStream).use { zipInputStream ->
-                        var entry = zipInputStream.nextEntry
-                        while (entry != null) {
-                            val newFile = File(targetDirectory, entry.name)
-
-                            val canonicalRootDir = targetDirectory.canonicalPath
-                            val canonicalFilepath = newFile.canonicalPath
-                            if (!canonicalFilepath.startsWith(canonicalRootDir)) {
-                                throw SecurityException("Unsafe file entry detected: ${entry.name}")
-                            }
-
-                            if (entry.isDirectory) {
-                                newFile.mkdirs()
-                            } else {
-                                newFile.parentFile?.mkdirs()
-                                FileOutputStream(newFile).use { outputStream ->
-                                    val buffer = ByteArray(8192)
-                                    var len: Int
-                                    while (zipInputStream.read(buffer).also { len = it } > 0) {
-                                        outputStream.write(buffer, 0, len)
+                    when {
+                        isZip -> {
+                            ZipInputStream(FileInputStream(zipFile)).use { zipInputStream ->
+                                var entry = zipInputStream.nextEntry
+                                while (entry != null) {
+                                    val newFile = File(targetDirectory, entry.name)
+                                    val canonicalRootDir = targetDirectory.canonicalPath
+                                    val canonicalFilepath = newFile.canonicalPath
+                                    if (!canonicalFilepath.startsWith(canonicalRootDir)) {
+                                        throw SecurityException("Unsafe file entry detected: ${entry.name}")
                                     }
+
+                                    if (entry.isDirectory) {
+                                        newFile.mkdirs()
+                                    } else {
+                                        newFile.parentFile?.mkdirs()
+                                        newFile.outputStream().use { outputStream ->
+                                            zipInputStream.copyTo(outputStream)
+                                        }
+                                    }
+                                    zipInputStream.closeEntry()
+                                    entry = zipInputStream.nextEntry
                                 }
-                                onProgress?.invoke("Extracted: ${entry.name}")
                             }
-                            zipInputStream.closeEntry()
-                            entry = zipInputStream.nextEntry
+                            zipFile.delete()
+                            onComplete(true, "Extracted Zip & Ready to Play!")
+                        }
+                        isRar -> {
+                            // Extract RAR using Junrar
+                            Junrar.extract(zipFile, targetDirectory)
+                            zipFile.delete()
+                            onComplete(true, "Extracted Rar & Ready to Play!")
+                        }
+                        else -> {
+                            // Already a raw file (.gba, .nds, etc.)
+                            onComplete(true, "Download Complete!")
                         }
                     }
                 } else {
-                    val fileName = fileUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "rom_game.bin" }
-                    val targetFile = File(targetDirectory, fileName)
-                    FileOutputStream(targetFile).use { outputStream ->
-                        val buffer = ByteArray(8192)
-                        var len: Int
-                        while (bufferedStream.read(buffer).also { len = it } > 0) {
-                            outputStream.write(buffer, 0, len)
-                        }
-                    }
+                    onComplete(false, "Downloaded file is empty")
                 }
-
-                bufferedStream.close()
-                onComplete(true, "Download & Ready to Play!")
             } catch (e: Exception) {
-                onComplete(false, e.message ?: "Unknown extraction error")
+                onComplete(false, e.message ?: "Extraction error")
             }
         }.start()
     }
