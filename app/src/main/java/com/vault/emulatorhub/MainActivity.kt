@@ -37,6 +37,15 @@ import java.io.InputStreamReader
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize Fetch download manager globally on app startup
+        val fetchConfig = FetchConfiguration.Builder(applicationContext)
+            .setNamespace("VaultDownloadManager")
+            .setDownloadConcurrentLimit(3)
+            .enableLogging(true)
+            .build()
+        Fetch.getDefault(fetchConfig)
+
         val platforms = loadPlatformsFromAssets()
 
         setContent {
@@ -136,10 +145,11 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!dir.exists()) dir.mkdirs()
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val targetDir = File(downloadsDir, "VaultGames")
+        if (!targetDir.exists()) targetDir.mkdirs()
 
-        val targetFile = File(dir, filename)
+        val targetFile = File(targetDir, filename)
         val request = Request(url, targetFile.absolutePath).apply {
             priority = Priority.HIGH
             networkType = NetworkType.ALL
@@ -152,20 +162,34 @@ class MainActivity : ComponentActivity() {
         }
 
         try {
-            var fetch = runCatching { Fetch.Impl.getDefaultInstance() }.getOrNull()
-            if (fetch == null) {
-                val config = FetchConfiguration.Builder(this).setDownloadConcurrentLimit(3).build()
-                Fetch.Impl.setDefaultInstanceConfiguration(config)
-                fetch = Fetch.Impl.getDefaultInstance()
-            }
-
+            val fetch = Fetch.Impl.getDefaultInstance()
             fetch.enqueue(
                 request,
-                { Toast.makeText(this, "Queued: $filename", Toast.LENGTH_SHORT).show() },
-                { Toast.makeText(this, "Host rejected connection", Toast.LENGTH_SHORT).show() }
+                { updatedRequest -> 
+                    Toast.makeText(this, "Queued: $filename", Toast.LENGTH_SHORT).show()
+                },
+                { error -> 
+                    Toast.makeText(this, "Host rejected connection: ${error.name}", Toast.LENGTH_LONG).show()
+                }
             )
+
+            // Auto-extract listener upon completion
+            fetch.addListener(object : com.tonyodev.fetch2.AbstractFetchListener() {
+                onComplete@{ download: com.tonyodev.fetch2.Download ->
+                    if (download.file == targetFile.absolutePath) {
+                        val gameFolder = File(targetDir, filename.substringBeforeLast("."))
+                        VaultZipExtractor.extractLocalZip(targetFile, gameFolder) { success, message ->
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        fetch.removeListener(this)
+                    }
+                }
+            })
         } catch (e: Exception) {
             Toast.makeText(this, "Crash Reason: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
+
