@@ -90,11 +90,40 @@ fun getConsoleTheme(id: String): ConsoleTheme {
 }
 
 fun enqueueDownload(context: android.content.Context, fileUrl: String) {
-    val fetch = runCatching { Fetch.Impl.getDefaultInstance() }.getOrNull() ?: return
-    val fileName = fileUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
-    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-    val targetFile = File(downloadsDir, "VaultGames/$fileName")
+    var fetch = runCatching { Fetch.Impl.getDefaultInstance() }.getOrNull()
+    if (fetch == null) {
+        try {
+            val config = FetchConfiguration.Builder(context)
+                .setNamespace("VaultDownloadManager")
+                .setDownloadConcurrentLimit(3)
+                .build()
+            Fetch.Impl.setDefaultInstanceConfiguration(config)
+            fetch = Fetch.Impl.getDefaultInstance()
+        } catch (e: Exception) {
+            // Ignored
+        }
+    }
+    if (fetch == null) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context, "Download engine init failed", Toast.LENGTH_SHORT).show()
+        }
+        return
+    }
 
+    val fileName = fileUrl.substringAfterLast("/").substringBefore("?").ifEmpty { "downloaded_game" }
+    
+    if (fileUrl.lowercase().contains(".html") || fileUrl.lowercase().contains(".php") || fileName.lowercase().endsWith(".html")) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context, "Blocked fake HTML ad page!", Toast.LENGTH_LONG).show()
+        }
+        return
+    }
+
+    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    val targetDir = File(downloadsDir, "VaultGames")
+    if (!targetDir.exists()) targetDir.mkdirs()
+
+    val targetFile = File(targetDir, fileName)
     val request = Request(fileUrl, targetFile.absolutePath).apply {
         priority = Priority.HIGH
         networkType = NetworkType.ALL
@@ -113,7 +142,7 @@ fun enqueueDownload(context: android.content.Context, fileUrl: String) {
     fetch.addListener(object : AbstractFetchListener() {
         override fun onCompleted(download: Download) {
             if (download.file == targetFile.absolutePath) {
-                val gameFolder = File(downloadsDir, "VaultGames/${fileName.substringBeforeLast(".")}")
+                val gameFolder = File(targetDir, fileName.substringBeforeLast("."))
                 VaultZipExtractor.extractLocalZip(targetFile, gameFolder) { _, message ->
                     Handler(Looper.getMainLooper()).post {
                         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -124,6 +153,7 @@ fun enqueueDownload(context: android.content.Context, fileUrl: String) {
         }
     })
 }
+
 
 @Composable
 fun BrowserScreen(url: String, onClose: () -> Unit, onDownload: (String, String, String, String, String) -> Unit) {
